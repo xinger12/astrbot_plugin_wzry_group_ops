@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>王者荣耀群 · 运营作战台</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <div class="top-main">
+          <h1>🤖 王者荣耀交友扩列群 · 自动化运营引擎</h1>
+          <p>目标：增加群人数 ｜ 定位：游戏交流群 ｜ 引擎：自动采集 · 自动跟进 · 自动救场 · 自动唤醒 · 自动结算</p>
+        </div>
+        <div class="top-badges">
+          <span class="badge" id="bGroups">群 0</span>
+          <span class="badge" id="bTpl">模板 0</span>
+          <span class="badge" id="bEngine">引擎 --</span>
+        </div>
+      </header>
+
+      <nav class="tabs">
+        <button class="tab active" data-t="automation">自动化引擎</button>
+        <button class="tab" data-t="overview">状态概览</button>
+        <button class="tab" data-t="groups">群管理</button>
+        <button class="tab" data-t="push">内容推送</button>
+        <button class="tab" data-t="ai">AI 话术</button>
+        <button class="tab" data-t="points">积分管理</button>
+        <button class="tab" data-t="stats">数据看板</button>
+        <button class="tab" data-t="schedule">推送计划</button>
+        <button class="tab" data-t="guide">运营手册</button>
+      </nav>
+
+      <!-- ============ 自动化引擎 ============ -->
+      <section class="panel active" id="p-automation">
+        <!-- ===== v2.6 新增设置（置顶醒目） ===== -->
+        <div class="card new-card">
+          <h2>🆕 v2.6 新增设置 <span class="new-badge">NEW</span></h2>
+          <p class="hint">本次更新新增：①周榜展示人数（防消息过长）②AI 定时推送实时生成（每次内容不同）③日报接收人（可指定 QQ）。</p>
+          <div class="row" style="margin-top:12px">
+            <div class="field" style="flex:2">
+              <label>日报接收人 QQ <span class="new-badge sm">新</span>（多个用逗号分隔，留空则发到群）</label>
+              <input type="text" id="aReportAdmin" placeholder="如：123456, 654321" />
+            </div>
+            <label class="sw" style="align-self:end; padding-bottom:6px">
+              <input type="checkbox" id="aReportToGroup" />
+              <span>日报同时发一份到群 <span class="new-badge sm">新</span></span>
+            </label>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field">
+              <label>周榜展示人数 <span class="new-badge sm">新</span>（3-20，防消息过长）</label>
+              <input type="number" id="aWeeklyTopN" min="3" max="20" placeholder="5" />
+            </div>
+            <div class="field" style="flex:2; align-self:end; padding-bottom:2px">
+              <p class="hint" style="margin:0">💡 AI 定时推送实时生成开关在「<b>AI 话术</b>」标签页 →「AI 参与的场景」→ 勾选「定时推送实时生成」，开启后每次推送内容都不同。</p>
+            </div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="saveNew">保存新增设置</button>
+            <span id="newResult" class="result"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>⚡ 全自动任务（绑定群后自动运转）</h2>
+          <p class="hint">以下任务无需人工干预，引擎每 30 秒调度一次。关闭开关可暂停对应任务。</p>
+          <div class="auto-grid" id="autoGrid"></div>
+        </div>
+
+        <div class="card">
+          <h2>🎛️ 任务参数</h2>
+          <div class="row">
+            <div class="field"><label>采集间隔（秒）</label><input type="number" id="aCollectInterval" /></div>
+            <div class="field"><label>冷场阈值（秒无消息）</label><input type="number" id="aColdThreshold" /></div>
+            <div class="field"><label>救场冷却（秒）</label><input type="number" id="aColdCooldown" /></div>
+            <div class="field"><label>沉睡判定（天未发言）</label><input type="number" id="aWakeDays" /></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field"><label>唤醒冷却（秒）</label><input type="number" id="aWakeCooldown" /></div>
+            <div class="field"><label>每轮最多唤醒（人）</label><input type="number" id="aWakeMax" /></div>
+            <div class="field"><label>活跃时段起（0-23）</label><input type="number" id="aHourStart" /></div>
+            <div class="field"><label>活跃时段止（0-23）</label><input type="number" id="aHourEnd" /></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field"><label>日报时间（HH:MM）</label><input type="text" id="aReportTime" placeholder="23:30" /></div>
+            <div class="field"><label>周榜时间（HH:MM）</label><input type="text" id="aWeeklyTime" placeholder="21:00" /></div>
+            <div class="field"><label>周榜星期（0=一…6=日）</label><input type="number" id="aWeeklyWeekday" /></div>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="saveAuto">保存参数</button>
+            <span id="autoResult" class="result"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>🔧 手动触发（调试用）</h2>
+          <p class="hint">立即执行一次任务，用于验证效果，不必等到定时点。</p>
+          <div class="row" id="triggerRow">
+            <button class="btn" data-job="collect">采集群数据</button>
+            <button class="btn" data-job="followup">新人跟进</button>
+            <button class="btn" data-job="cold">冷场救场</button>
+            <button class="btn" data-job="wake">沉睡唤醒</button>
+            <button class="btn" data-job="settle">积分结算</button>
+            <button class="btn" data-job="report">发送日报</button>
+            <button class="btn" data-job="weekly">发布周榜</button>
+          </div>
+          <div id="triggerResult" class="result"></div>
+        </div>
+
+        <div class="card">
+          <h2>💬 关键词自动应答</h2>
+          <p class="hint">群成员发言命中关键词时自动回复。点击「添加规则」新增，多条关键词用逗号分隔。</p>
+          <div id="replyList" class="list"></div>
+          <button class="btn" id="addReply" style="margin-top:10px">+ 添加规则</button>
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="saveReply">保存应答规则</button>
+            <span id="replyResult" class="result"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>👀 群成员活跃度</h2>
+          <div class="row">
+            <div class="field"><label>群</label><select id="actGroup"></select></div>
+            <button class="btn" id="loadAct">刷新</button>
+          </div>
+          <div id="actSummary" class="kpis grid" style="margin-top:12px"></div>
+          <div id="actTable" class="list" style="margin-top:12px"></div>
+        </div>
+      </section>
+
+      <!-- ============ 概览 ============ -->
+      <section class="panel" id="p-overview">
+        <div class="grid kpis">
+          <div class="kpi"><div class="v" id="kGroups">0</div><div class="k">已绑定群</div></div>
+          <div class="kpi"><div class="v" id="kTpl">0</div><div class="k">话术模板</div></div>
+          <div class="kpi"><div class="v" id="kEngine">--</div><div class="k">自动化引擎</div></div>
+          <div class="kpi"><div class="v" id="kAutoOn">--</div><div class="k">启用任务数</div></div>
+          <div class="kpi"><div class="v" id="kWelcome">--</div><div class="k">入群欢迎</div></div>
+        </div>
+
+        <div class="card">
+          <h2>⚙️ 基础开关</h2>
+          <div class="switch-row">
+            <label class="sw">
+              <input type="checkbox" id="cfgWelcome" />
+              <span>新人入群自动欢迎</span>
+            </label>
+            <label class="sw">
+              <input type="checkbox" id="cfgSchedule" />
+              <span>启用每日 SOP 定时推送</span>
+            </label>
+            <button class="btn" id="saveCfg">保存开关</button>
+          </div>
+          <p class="hint">这里是<b>全局</b>开关。单个群的独立开关请到「群管理」页。</p>
+        </div>
+
+        <div class="card">
+          <h2>👥 已绑定群</h2>
+          <p class="hint">在 QQ 群里发送 <code>/运营 绑定</code> 即可把该群设为运营目标。群级开关请到「群管理」页。</p>
+          <div id="groupList" class="list"></div>
+        </div>
+      </section>
+
+      <!-- ============ 群管理 ============ -->
+      <section class="panel" id="p-groups">
+        <div class="card">
+          <h2>🔍 扫描并绑定群（自助添加，无需在群里发指令）</h2>
+          <p class="hint">
+            点「扫描群列表」自动获取机器人所在的所有 QQ 群，勾选后一键绑定。
+            支持批量操作，也可对已绑定的群解绑。
+          </p>
+          <div class="row">
+            <button class="btn primary" id="scanGroups">扫描群列表</button>
+            <button class="btn" id="bindSelected">绑定选中</button>
+            <button class="btn" id="unbindSelected">解绑选中</button>
+            <span id="scanResult" class="result"></span>
+          </div>
+          <div id="scanList" class="list" style="margin-top:12px"></div>
+        </div>
+
+        <div class="card">
+          <h2>🎛️ 分群开关（每群独立控制）</h2>
+          <p class="hint">
+            关掉某个群的总开关后，该群不再收到任何自动推送 / 欢迎 / 应答，其它群不受影响。
+            也可展开单项功能做更细粒度控制。
+          </p>
+          <div id="groupMgmt" class="list"></div>
+        </div>
+
+        <div class="card">
+          <h2>📝 入群欢迎词（自定义）</h2>
+          <p class="hint">
+            支持占位符：<code>{nickname}</code> 新人昵称、<code>{group_no}</code> 群号、<code>{date}</code> 日期。
+            对所有启用「入群欢迎」的群生效。
+          </p>
+          <textarea id="welcomeText" class="welcome-area" rows="6" placeholder="在此编辑入群欢迎语…"></textarea>
+          <div class="row" style="margin-top:10px">
+            <button class="btn primary" id="saveWelcome">保存欢迎词</button>
+            <button class="btn" id="resetWelcome">恢复默认</button>
+            <button class="btn" id="previewWelcome">刷新预览</button>
+            <span id="welcomeResult" class="result"></span>
+          </div>
+          <div class="preview" style="margin-top:12px">
+            <div class="preview-head"><span>渲染效果预览（示例昵称）</span></div>
+            <pre id="welcomePreview">—</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 内容推送 ============ -->
+      <section class="panel" id="p-push">
+        <div class="card">
+          <h2>📤 一键推送</h2>
+          <div class="row">
+            <div class="field">
+              <label>目标群</label>
+              <select id="pushGroup"></select>
+            </div>
+            <div class="field">
+              <label>话术模板</label>
+              <select id="pushTpl"></select>
+            </div>
+            <button class="btn primary" id="doPush">立即推送</button>
+          </div>
+          <div class="preview">
+            <div class="preview-head">
+              <span>内容预览</span>
+              <button class="mini-btn" id="copyPreview">复制</button>
+            </div>
+            <pre id="pushPreview">选择模板后显示预览…</pre>
+          </div>
+          <div id="pushResult" class="result"></div>
+        </div>
+
+        <div class="card">
+          <h2>📚 话术模板库</h2>
+          <p class="hint">共 <b id="tplCount">0</b> 套模板，点「复制」可直接粘贴到 QQ 群。</p>
+          <div id="tplList" class="tpl-list"></div>
+        </div>
+      </section>
+
+      <!-- ============ AI 话术 ============ -->
+      <section class="panel" id="p-ai">
+        <div class="card">
+          <h2>🤖 AI 话术生成</h2>
+          <p class="hint">
+            复用 AstrBot 已配置的大模型，<b>无需另填 API Key</b>。
+            AI 不可用时会自动降级为内置模板，不影响运营。
+          </p>
+          <div class="switch-row" style="margin-bottom:12px">
+            <label class="sw">
+              <input type="checkbox" id="aiEnabled" />
+              <span>启用 AI（总开关）</span>
+            </label>
+            <span id="aiProviderBadge" class="badge-inline off">检测中…</span>
+            <button class="btn primary" id="saveAi">保存 AI 配置</button>
+            <span id="aiResult" class="result"></span>
+          </div>
+
+          <div class="grid two">
+            <div class="field">
+              <label>使用模型</label>
+              <select id="aiProvider"></select>
+            </div>
+            <div class="field">
+              <label>生成温度（0=保守，2=天马行空）</label>
+              <input type="number" id="aiTemp" min="0" max="2" step="0.1" />
+            </div>
+            <div class="field">
+              <label>调用超时（秒）</label>
+              <input type="number" id="aiTimeout" min="5" max="120" step="1" />
+            </div>
+            <div class="field">
+              <label>AI 参与的场景</label>
+              <div class="feat-grid">
+                <label class="sw feat-sw"><input type="checkbox" id="aiForGenerate" /><span>话术生成</span></label>
+                <label class="sw feat-sw"><input type="checkbox" id="aiForRescue" /><span>冷场救场</span></label>
+                <label class="sw feat-sw"><input type="checkbox" id="aiForReply" /><span>关键词应答</span></label>
+                <label class="sw feat-sw"><input type="checkbox" id="aiForWelcome" /><span>入群欢迎</span></label>
+                <label class="sw feat-sw"><input type="checkbox" id="aiForSchedule" /><span>定时推送实时生成 <span class="new-badge sm">新</span></span></label>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" style="margin-top:10px">
+            <label>人设（系统提示词）</label>
+            <textarea id="aiPersona" class="welcome-area" rows="2"></textarea>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>硬性约束（每次生成都会附加）</label>
+            <textarea id="aiGuard" class="welcome-area" rows="3"></textarea>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>✨ 生成 / 润色话术</h2>
+          <div class="row">
+            <div class="field">
+              <label>场景</label>
+              <select id="aiScene"></select>
+            </div>
+            <div class="field">
+              <label>额外要求（可选）</label>
+              <input type="text" id="aiHint" placeholder="例：今天聊新英雄上线，语气活泼一点" />
+            </div>
+            <button class="btn primary" id="aiGen">AI 生成</button>
+            <button class="btn" id="aiPolish">润色当前内容</button>
+          </div>
+          <div class="preview" style="margin-top:12px">
+            <div class="preview-head">
+              <span>生成结果（可编辑后采纳）</span>
+              <span>
+                <button class="mini-btn" id="aiCopy">复制</button>
+                <button class="mini-btn" id="aiApply">采纳为正式内容</button>
+                <button class="mini-btn" id="aiRestore">还原内置</button>
+              </span>
+            </div>
+            <textarea id="aiOutput" class="welcome-area" rows="7" placeholder="点「AI 生成」后，结果会出现在这里，可直接编辑…"></textarea>
+          </div>
+          <div id="aiGenResult" class="result"></div>
+        </div>
+
+        <div class="card">
+          <h2>📌 已采纳的 AI 内容</h2>
+          <p class="hint">这些模板当前使用 AI 生成版本，点「还原内置」可恢复默认。</p>
+          <div id="aiOverrides" class="list"></div>
+        </div>
+      </section>
+
+      <!-- ============ 积分管理 ============ -->
+      <section class="panel" id="p-points">
+        <div class="card">
+          <h2>🏆 积分排行榜</h2>
+          <div class="row">
+            <div class="field">
+              <label>群</label>
+              <select id="ptsGroup"></select>
+            </div>
+            <button class="btn" id="loadPts">刷新</button>
+            <button class="btn danger" id="resetPts">清空本群积分</button>
+          </div>
+          <div id="ptsTable" class="list"></div>
+        </div>
+
+        <div class="card">
+          <h2>➕ 手动调整积分</h2>
+          <div class="row">
+            <div class="field"><label>群</label><select id="adjGroup"></select></div>
+            <div class="field"><label>QQ号</label><input type="text" id="adjUser" placeholder="如 10001" /></div>
+            <div class="field"><label>增减值</label><input type="number" id="adjDelta" placeholder="如 20 或 -10" /></div>
+            <button class="btn primary" id="doAdj">提交</button>
+          </div>
+          <div id="adjResult" class="result"></div>
+        </div>
+
+        <div class="card new-card">
+          <h2>⚙️ 积分规则配置 <span class="new-badge">NEW</span></h2>
+          <p class="hint">在这里定义积分怎么算、邀请有什么限制、积分能兑换什么。改完点下方保存，群内 <code>/签到</code>、<code>/邀请</code>、<code>/兑换</code> 会立即按新规则执行。</p>
+
+          <h3 class="sub-h">① 各行为加分值</h3>
+          <div class="row" id="pointRules"></div>
+
+          <h3 class="sub-h">② 邀请防刷限制</h3>
+          <div class="row">
+            <div class="field">
+              <label>每人每天最多记录邀请次数（0 = 不限）</label>
+              <input type="number" id="ptInviteLimit" min="0" max="999" placeholder="3" />
+            </div>
+            <div class="field" style="flex:2; align-self:end">
+              <p class="hint" style="margin:0 0 4px">💡 群内 <code>/邀请</code> 由成员自助上报，设上限可防止刷分。成员超限会收到提示。</p>
+            </div>
+          </div>
+
+          <h3 class="sub-h">③ 积分兑换表（群内 <code>/兑换</code> 可查看）</h3>
+          <div id="ptRedeemList" class="list"></div>
+          <div class="row" style="margin-top:10px">
+            <div class="field"><label>兑换项名称</label><input type="text" id="ptRName" placeholder="如：皮肤碎片" /></div>
+            <div class="field"><label>所需积分</label><input type="number" id="ptRCost" min="0" placeholder="如：100" /></div>
+            <div class="field" style="flex:2"><label>说明（可选）</label><input type="text" id="ptRDesc" placeholder="如：攒够100分兑换1个皮肤碎片" /></div>
+            <button class="btn" id="addRedeem">添加兑换项</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field" style="flex:3"><label>兑换说明文案（群内展示）</label><input type="text" id="ptRedeemNote" placeholder="如：积分每周日自动结算公示，月底清零兑换~" /></div>
+          </div>
+
+          <div class="row" style="margin-top:12px">
+            <button class="btn primary" id="savePointsCfg">保存积分配置</button>
+            <span id="ptCfgResult" class="result"></span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>💡 积分规则（群内命令）</h2>
+          <div class="rule-grid" id="ptRuleGrid">
+            <div class="rule"><b>/签到</b><span>每日签到</span></div>
+            <div class="rule"><b>/积分</b><span>查询自己的积分</span></div>
+            <div class="rule"><b>/积分榜</b><span>查看群内排行</span></div>
+            <div class="rule"><b>/邀请</b><span>记录邀请</span></div>
+            <div class="rule"><b>/兑换</b><span>查看兑换表</span></div>
+          </div>
+          <p class="hint">积分是游戏群替代"复购"的留存引擎：成员为攒分而持续发言、开黑、拉人。</p>
+        </div>
+      </section>
+
+      <!-- ============ 数据看板 ============ -->
+      <section class="panel" id="p-stats">
+        <div class="card">
+          <h2>📈 录入今日数据</h2>
+          <div class="row">
+            <div class="field"><label>群</label><select id="stGroup"></select></div>
+            <div class="field"><label>日期</label><input type="text" id="stDate" /></div>
+            <div class="field"><label>群总人数</label><input type="number" id="stTotal" placeholder="128" /></div>
+            <div class="field"><label>今日新增</label><input type="number" id="stNew" placeholder="12" /></div>
+            <div class="field"><label>今日退群</label><input type="number" id="stLeave" placeholder="2" /></div>
+            <div class="field"><label>发言人数</label><input type="number" id="stActive" placeholder="45" /></div>
+            <div class="field"><label>成团次数</label><input type="number" id="stTeam" placeholder="3" /></div>
+            <button class="btn primary" id="doStat">保存</button>
+          </div>
+          <div id="stResult" class="result"></div>
+        </div>
+
+        <div class="card">
+          <h2>📋 历史数据</h2>
+          <div id="statsTable" class="list"></div>
+        </div>
+      </section>
+
+      <!-- ============ 推送计划 ============ -->
+      <section class="panel" id="p-schedule">
+        <div class="card">
+          <h2>🗓️ 每日 SOP 推送计划</h2>
+          <p class="hint">到点自动向所有已绑定群推送对应内容。时间为 24 小时制 HH:MM。</p>
+          <div id="schedList" class="list"></div>
+          <div class="row" style="margin-top:12px">
+            <div class="field"><label>时间</label><input type="text" id="scTime" placeholder="20:00" /></div>
+            <div class="field"><label>模板</label><select id="scTpl"></select></div>
+            <button class="btn" id="addSched">添加</button>
+            <button class="btn primary" id="saveSched">保存计划</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 运营手册 ============ -->
+      <section class="panel" id="p-guide">
+        <div class="card">
+          <h2>🎯 群定位与增长飞轮</h2>
+          <p class="note">群对用户的三个价值：<b>开黑搭子 / 交友扩列 / 段位互助</b>。所有运营动作围绕"找人一起玩"供给价值。</p>
+          <div class="flow">
+            <span>公域引流</span><i>→</i><span>进群欢迎+身份卡</span><i>→</i><span>当晚开黑车队</span>
+            <i>→</i><span>积分激励</span><i>→</i><span>晒战绩+拉人返利</span><i>→</i><span>老带新裂变</span>
+          </div>
+          <p class="hint">关键：<b>进群当天必须体验到一次开黑</b>，留存率翻倍。</p>
+        </div>
+
+        <div class="card">
+          <h2>⏰ 每日运营时间轴</h2>
+          <table class="tbl">
+            <tr><th>时间</th><th>板块</th><th>目的</th></tr>
+            <tr><td>10:30</td><td>早安话题</td><td>唤醒+维持日活</td></tr>
+            <tr><td>13:00</td><td>午后互动</td><td>轻互动，制造发言</td></tr>
+            <tr><td>17:30</td><td>车队报名接龙</td><td>为晚高峰蓄水</td></tr>
+            <tr><td>20:00</td><td>开黑车队</td><td>核心留存动作</td></tr>
+            <tr><td>22:30</td><td>战绩秀场</td><td>社交荣誉，刺激参与</td></tr>
+            <tr><td>23:00</td><td>预告+口令红包</td><td>次日回访钩子</td></tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>🚀 拉新三阶段</h2>
+          <table class="tbl">
+            <tr><th>阶段</th><th>人数</th><th>核心动作</th></tr>
+            <tr><td>种子期</td><td>0→50</td><td>拉熟人、定群规、每晚固定开黑、选出5个车队骨干</td></tr>
+            <tr><td>内容期</td><td>50→300</td><td>抖音/小红书/贴吧发内容、每日SOP、交友专场</td></tr>
+            <tr><td>裂变期</td><td>300+</td><td>邀请返利、组队拉人、拉新排行榜、积分兑换日</td></tr>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>🛡️ 风控红线</h2>
+          <ul class="clean">
+            <li><b>拉人频率</b>：分批、隔天，避免账号被判定骚扰</li>
+            <li><b>广告治理</b>：设管理员+关键词过滤，及时踢发广告的</li>
+            <li><b>诈骗防范</b>：禁止"代充/低价点券/皮肤返利"，99% 是诈骗</li>
+            <li><b>未成年人</b>：不引导充值、不组织涉金钱赌博活动</li>
+            <li><b>进群验证</b>：新人前 3 天限制发链接，防广告号渗透</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.0.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
+    </div>
+
+    <!-- 显式引入 bridge SDK：AstrBot 返回 HTML 时会把它改写为带鉴权令牌的地址。
+         这样 app.js 无论以何种方式加载，都能确保 bridge 已就绪。 -->
+    <script src="/api/plugin/page/bridge-sdk.js"></script>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

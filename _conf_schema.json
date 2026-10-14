@@ -1,0 +1,96 @@
+{
+  "auto_welcome": {
+    "description": "新人入群自动欢迎",
+    "type": "bool",
+    "default": true,
+    "hint": "检测到新成员入群时，自动 @ 并发送欢迎语、引导填写身份卡，同时纳入新人跟进链。欢迎词内容可在作战台「群管理」页自定义"
+  },
+  "welcome_text": {
+    "description": "入群欢迎词（支持 {nickname} {group_no} {date}）",
+    "type": "text",
+    "default": "🎉 欢迎 {nickname} 加入王者开黑大家庭！\n先看置顶群规，然后发个身份卡让大家认识你 👇\n格式：昵称+段位+主玩位置+想找什么（队友/CP/师傅）\n今晚 20:00 有车队，新人优先带飞哦~",
+    "hint": "占位符：{nickname}=新人昵称，{group_no}=群号，{date}=日期。留空则用内置默认文案"
+  },
+  "schedule_enabled": {
+    "description": "启用每日 SOP 定时推送",
+    "type": "bool",
+    "default": true,
+    "hint": "按推送计划中的时间点，向已绑定的群自动发送对应内容"
+  },
+  "topic_pool": {
+    "description": "早安话题池（随机轮换）",
+    "type": "list",
+    "default": [
+      "你最近一次五杀是用哪个英雄？",
+      "你上分最怕遇到什么队友？",
+      "如果只能玩一个英雄，你选谁？",
+      "你王者最高打到什么段位？",
+      "你最喜欢哪个皮肤？为什么？"
+    ],
+    "hint": "每日「早安话题」会从这里随机抽取一条"
+  },
+  "points_config": {
+    "description": "积分规则",
+    "type": "object",
+    "hint": "各行为对应的积分值，可按需调整",
+    "items": {
+      "sign": { "description": "手动签到", "type": "int", "default": 5 },
+      "team": { "description": "参与开黑车队", "type": "int", "default": 10 },
+      "invite": { "description": "邀请新人进群", "type": "int", "default": 30 },
+      "event": { "description": "活动获奖", "type": "int", "default": 50 },
+      "interact": { "description": "每日活跃自动结算", "type": "int", "default": 5 }
+    }
+  },
+  "automation": {
+    "description": "自动化引擎（高级配置请用 WebUI 作战台）",
+    "type": "object",
+    "hint": "以下开关控制全自动运营任务，完整参数（阈值/周期）请在作战台「自动化引擎」页调整",
+    "items": {
+      "auto_collect": { "description": "自动采集群数据", "type": "bool", "default": true },
+      "auto_followup": { "description": "自动新人跟进", "type": "bool", "default": true },
+      "auto_cold_rescue": { "description": "自动冷场救场", "type": "bool", "default": true },
+      "auto_wake": { "description": "自动沉睡唤醒", "type": "bool", "default": true },
+      "auto_settle": { "description": "自动积分结算", "type": "bool", "default": true },
+      "auto_daily_report": { "description": "自动运营日报", "type": "bool", "default": true },
+      "auto_weekly_board": { "description": "自动周榜发布", "type": "bool", "default": true },
+      "auto_reply": { "description": "自动关键词应答", "type": "bool", "default": true }
+    }
+  },
+  "ai": {
+    "description": "AI 话术生成（复用 AstrBot 已配置的大模型）",
+    "type": "object",
+    "hint": "开启后可用大模型自动生成/润色群运营话术。详细设置（模型选择、人设、约束、各场景开关）请在作战台「AI 话术」页调整",
+    "items": {
+      "ai_enabled": {
+        "description": "启用 AI",
+        "type": "bool",
+        "default": false
+      },
+      "ai_provider_id": {
+        "description": "指定模型 ID（留空使用默认模型）",
+        "type": "string",
+        "default": ""
+      },
+      "ai_for_rescue": {
+        "description": "冷场救场用 AI 生成话题",
+        "type": "bool",
+        "default": true
+      },
+      "ai_for_reply": {
+        "description": "关键词应答允许 AI 兜底",
+        "type": "bool",
+        "default": true
+      },
+      "ai_for_welcome": {
+        "description": "入群欢迎语用 AI 生成",
+        "type": "bool",
+        "default": false
+      },
+      "ai_temperature": {
+        "description": "生成温度（0=保守，2=天马行空）",
+        "type": "float",
+        "default": 0.9
+      }
+    }
+  }
+}

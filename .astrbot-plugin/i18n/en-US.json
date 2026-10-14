@@ -1,0 +1,16 @@
+{
+  "views": {
+    "dashboard": {
+      "title": "Operations Console",
+      "description": "Automated operations dashboard for the Honor of Kings social QQ group: AI copywriting, per-group switches, custom welcome text, 10 automation tasks, content push, points management, data board and playbook.",
+      "heading": "Honor of Kings Group · Automation Engine"
+    }
+  },
+  "pages": {
+    "dashboard": {
+      "title": "Operations Console",
+      "description": "Automated operations dashboard for the Honor of Kings social QQ group: AI copywriting, per-group switches, custom welcome text, 10 automation tasks, content push, points management, data board and playbook.",
+      "heading": "Honor of Kings Group · Automation Engine"
+    }
+  }
+}
