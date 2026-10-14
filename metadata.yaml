@@ -11,7 +11,7 @@ author: WorkBuddy
 # ↓↓↓ 想启用 AstrBot 的「在线更新」功能，把下面换成你自己的公开 GitHub 仓库地址 ↓↓↓
 # 改完后用「从链接安装」重装一次（而不是上传 zip），之后就能像商店插件一样一键更新。
 # 详见插件包内「在线更新说明.md」
-repo: https://github.com/your-name/astrbot_plugin_wzry_group_ops
+repo: https://github.com/xinger12/astrbot_plugin_wzry_group_ops
 astrbot_version: ">=4.26,<5"
 support_platforms:
   - aiocqhttp
