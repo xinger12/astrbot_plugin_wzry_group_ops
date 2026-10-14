@@ -370,7 +370,7 @@
               <input type="number" id="ptInviteLimit" min="0" max="999" placeholder="3" />
             </div>
             <div class="field" style="flex:2; align-self:end">
-              <p class="hint" style="margin:0 0 4px">💡 群内 <code>/邀请</code> 由成员自助上报，设上限可防止刷分。成员超限会收到提示。</p>
+              <p class="hint" style="margin:0 0 4px">💡 上限同时作用于<b>自动记录</b>和群内 <code>/邀请</code> 手动上报：超过上限的邀请仍会留档，但不计分（防刷小号）。</p>
             </div>
           </div>
 
@@ -392,13 +392,52 @@
           </div>
         </div>
 
+        <div class="card new-card">
+          <h2>📨 邀请记录 <span class="new-badge">NEW</span></h2>
+          <p class="hint">新人入群时<b>自动识别邀请人并计分</b>，成员不用再手动发 <code>/邀请</code>。管理员审批入群的场景拿不到真实邀请人，会记为「待认领」，可在这里指定后补计分。</p>
+
+          <h3 class="sub-h">① 自动记录设置</h3>
+          <div class="row">
+            <label class="sw"><input type="checkbox" id="ivAuto" /><span>自动捕获入群邀请</span></label>
+            <label class="sw"><input type="checkbox" id="ivBroadcast" /><span>邀请成功群内播报</span></label>
+            <label class="sw"><input type="checkbox" id="ivCountApprove" /><span>审批入群也计给默认邀请人</span></label>
+            <div class="field"><label>默认邀请人 QQ（审批入群时归属）</label><input type="text" id="ivDefaultInviter" placeholder="留空=不自动归属" /></div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field" style="flex:4">
+              <label>播报话术（可用 <code>{inviter}</code> 邀请人 / <code>{invitee}</code> 新人 / <code>{points}</code> 积分）</label>
+              <input type="text" id="ivTpl" placeholder="🎉 感谢 {inviter} 拉来了新同学 {invitee}，邀请积分 +{points}！" />
+            </div>
+            <button class="btn primary" style="align-self:end" id="saveInviteCfg">保存邀请设置</button>
+            <span id="ivCfgResult" class="result" style="align-self:end;margin-bottom:8px"></span>
+          </div>
+
+          <h3 class="sub-h">② 邀请明细</h3>
+          <div class="row">
+            <div class="field"><label>群</label><select id="ivGroup"></select></div>
+            <button class="btn" id="loadInvite">刷新</button>
+            <button class="btn" id="exportInvite">导出 CSV</button>
+            <span id="ivSummary" class="hint" style="align-self:center"></span>
+          </div>
+          <div id="ivTable" class="list" style="margin-top:10px"></div>
+
+          <h3 class="sub-h">③ 手动补录一次邀请</h3>
+          <div class="row">
+            <div class="field"><label>邀请人 QQ</label><input type="text" id="ivInviter" placeholder="如 10001" /></div>
+            <div class="field"><label>新人 QQ</label><input type="text" id="ivInvitee" placeholder="如 10002" /></div>
+            <button class="btn primary" id="addInvite">补录并计分</button>
+            <span id="ivResult" class="result" style="align-self:center"></span>
+          </div>
+        </div>
+
         <div class="card">
           <h2>💡 积分规则（群内命令）</h2>
           <div class="rule-grid" id="ptRuleGrid">
             <div class="rule"><b>/签到</b><span>每日签到</span></div>
             <div class="rule"><b>/积分</b><span>查询自己的积分</span></div>
             <div class="rule"><b>/积分榜</b><span>查看群内排行</span></div>
-            <div class="rule"><b>/邀请</b><span>记录邀请</span></div>
+            <div class="rule"><b>/邀请</b><span>手动上报邀请（自动记录失效时兜底）</span></div>
+            <div class="rule"><b>/邀请记录</b><span>查看本群自动记录的邀请明细</span></div>
             <div class="rule"><b>/兑换</b><span>查看兑换表</span></div>
           </div>
           <p class="hint">积分是游戏群替代"复购"的留存引擎：成员为攒分而持续发言、开黑、拉人。</p>
@@ -490,7 +529,7 @@
         </div>
       </section>
 
-      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.0.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
+      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.1.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
     </div>
 
     <!-- 显式引入 bridge SDK：AstrBot 返回 HTML 时会把它改写为带鉴权令牌的地址。

@@ -191,6 +191,15 @@ input:focus, select:focus {
 .btn.primary:hover { background: #255cd0; }
 .btn.danger { color: var(--red); border-color: var(--red); }
 .btn.danger:hover { background: var(--red); color: #fff; }
+/* 二次点击确认态（替代被 iframe 拦截的原生 confirm） */
+.btn.confirming {
+  background: var(--red); color: #fff; border-color: var(--red);
+  animation: pulse-confirm .9s ease-in-out infinite;
+}
+@keyframes pulse-confirm {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(224, 84, 84, .5); }
+  50% { box-shadow: 0 0 0 5px rgba(224, 84, 84, 0); }
+}
 .mini-btn {
   background: var(--brand);
   color: #fff;
@@ -265,6 +274,45 @@ input:focus, select:focus {
   .stats-row { grid-template-columns: 1.4fr repeat(3, 1fr); font-size: 12px; }
   .stats-row > span:nth-child(5),
   .stats-row > span:nth-child(6) { display: none; }
+}
+
+/* ---------- 邀请记录表格 ---------- */
+.inv-row {
+  display: grid;
+  grid-template-columns: 1.5fr 1.2fr 1.2fr 0.8fr 0.7fr 1.1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  font-size: 13px;
+}
+.inv-row + .inv-row { margin-top: 6px; }
+.inv-row.head {
+  background: var(--panel);
+  color: var(--text2);
+  font-weight: 650;
+  font-size: 12.5px;
+  border-color: transparent;
+  margin-top: 0;
+}
+.inv-row .meta { margin: 2px 0 0; font-size: 11.5px; }
+.inv-ops { display: flex; gap: 6px; align-items: center; justify-content: flex-start; }
+.inv-claim-input {
+  width: 96px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.btn.sm { padding: 5px 10px; font-size: 12.5px; border-radius: 6px; }
+@media (max-width: 900px) {
+  .inv-row { grid-template-columns: 1.3fr 1.1fr 1.1fr 0.9fr; font-size: 12px; }
+  .inv-row > span:nth-child(5),
+  .inv-row > span:nth-child(6) { display: none; }
 }
 
 /* ---------- Table ---------- */

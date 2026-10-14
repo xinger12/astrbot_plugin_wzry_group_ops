@@ -346,10 +346,18 @@ DEFAULT_REDEEM_ITEMS = [
     {"name": "优先带飞", "cost": 500, "desc": "500 分换一次高段位优先带飞", "enabled": True},
 ]
 
+# 邀请自动播报默认话术（{inviter} 邀请人 / {invitee} 新人 / {points} 获得积分）
+DEFAULT_INVITE_BROADCAST = "🎉 感谢 {inviter} 拉来了新同学 {invitee}，邀请积分 +{points}！"
+
 # 积分体系总配置（规则数值 + 邀请限制 + 兑换表 + 说明文案）
 DEFAULT_POINTS_CONFIG = {
     "rules": dict(POINT_RULES),
     "invite_daily_limit": 3,   # 每人每天最多记录邀请次数；0 = 不限
+    "auto_invite": True,       # 自动捕获入群事件并记录邀请人（无需成员手动 /邀请）
+    "invite_broadcast": True,  # 邀请成功后在群内播报
+    "invite_broadcast_text": DEFAULT_INVITE_BROADCAST,
+    "count_on_approve": False,  # 管理员审批入群（拿不到邀请人）时是否也自动计分
+    "default_inviter": "",      # 审批入群时默认归属的邀请人 QQ（留空=不自动归属）
     "redeem_items": [dict(x) for x in DEFAULT_REDEEM_ITEMS],
     "redeem_note": "积分每周日自动结算公示，月底清零兑换~",
 }
@@ -564,6 +572,8 @@ class OpsStore:
             "stats": {},         # group_id -> [{date, total, new, leave, active, team}]
             "activity": {},      # group_id -> {last_msg_ts, last_rescue_ts, members{}, member_ids[], recent[]}
             "followups": {},     # group_id -> {user_id: {name, joined_ts, sent_stages[]}}
+            "invite_log": {},    # group_id -> [{inviter, inviter_name, invitee, invitee_name,
+                                 #               ts, date, source, points, counted, claimed}]
             "fired": {},         # 发送去重标记（持久化，防重启后重复推送）
             "discovered_groups": {},  # group_id -> 群名（收到过消息的群，供 WebUI 自助绑定）
             "schedule": DEFAULT_SCHEDULE,
@@ -726,6 +736,58 @@ class OpsStore:
         if u.get("invite_date") != today:
             return int(daily_limit)
         return max(0, int(daily_limit) - int(u.get("invite_today", 0)))
+
+    def revoke_invite(self, group_id: str, inviter: str, points: int = 0) -> None:
+        """撤销一次邀请计分（撤回积分/邀请数）。"""
+        if not inviter:
+            return
+        u = self.get_user(group_id, inviter)
+        u["invites"] = max(0, int(u.get("invites", 0)) - 1)
+        u["invite_today"] = max(0, int(u.get("invite_today", 0)) - 1)
+        u["points"] = max(0, int(u.get("points", 0)) - int(points or 0))
+
+    # --- 邀请记录明细 ---
+    INVITE_LOG_CAP = 200
+
+    def _invite_log_raw(self, group_id: str) -> list[dict[str, Any]]:
+        logs = self.data.setdefault("invite_log", {})
+        if not isinstance(logs, dict):
+            logs = self.data["invite_log"] = {}
+        arr = logs.get(group_id)
+        if not isinstance(arr, list):
+            arr = logs[group_id] = []
+        return arr
+
+    def add_invite_log(self, group_id: str, entry: dict[str, Any]) -> dict[str, Any]:
+        arr = self._invite_log_raw(group_id)
+        arr.append(entry)
+        if len(arr) > self.INVITE_LOG_CAP:
+            del arr[: len(arr) - self.INVITE_LOG_CAP]
+        return entry
+
+    def invite_log_of(self, group_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        """最近的邀请记录（新 → 旧）。"""
+        arr = self._invite_log_raw(group_id)
+        return list(reversed(arr))[: max(1, int(limit))]
+
+    def find_invite_log(self, group_id: str, ts: Any) -> dict[str, Any] | None:
+        for r in self._invite_log_raw(group_id):
+            if str(r.get("ts")) == str(ts):
+                return r
+        return None
+
+    def remove_invite_log(self, group_id: str, ts: Any) -> dict[str, Any] | None:
+        arr = self._invite_log_raw(group_id)
+        for i, r in enumerate(arr):
+            if str(r.get("ts")) == str(ts):
+                return arr.pop(i)
+        return None
+
+    def invitee_recorded(self, group_id: str, invitee: str) -> bool:
+        """同一新人是否已有邀请记录（防重复计分）。"""
+        if not invitee:
+            return False
+        return any(str(r.get("invitee")) == str(invitee) for r in self._invite_log_raw(group_id))
 
     def leaderboard(self, group_id: str, top: int = 10) -> list[dict[str, Any]]:
         users = self._group_points(group_id)
@@ -1522,15 +1584,30 @@ class WzryGroupOpsPlugin(Star):
             logger.debug(f"[{PLUGIN_NAME}] 群消息处理异常: {e}")
 
     async def _handle_group_increase(self, event: AstrMessageEvent, _get) -> None:
-        """新人入群：自动欢迎 + 建档跟进。"""
+        """新人入群：自动记录邀请 + 自动欢迎 + 建档跟进。"""
         self_id = str(_get("self_id", "") or "") or self._bot_self_id()
         new_uid = str(_get("user_id", "") or "")
         if self_id and new_uid == self_id:
             return
 
         group_id = str(_get("group_id", "") or "")
-        # 未绑定 / 未启用 / 未开欢迎功能的群，一律不处理
-        if not group_id or not self.store.group_feature(group_id, "welcome"):
+        if not group_id:
+            return
+
+        # ---- A. 自动记录邀请（不受群欢迎功能开关影响，只看群是否绑定） ----
+        try:
+            await self._auto_record_invite(
+                event,
+                group_id,
+                new_uid,
+                str(_get("sub_type", "") or ""),
+                str(_get("operator_id", "") or "") or str(_get("operator_uid", "") or ""),
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[{PLUGIN_NAME}] 自动邀请记录异常: {e}")
+
+        # ---- B. 欢迎 + 建档（未绑定 / 未开欢迎功能的群不处理） ----
+        if not self.store.group_feature(group_id, "welcome"):
             return
         cfg = self.store.data.get("config", {})
         if not cfg.get("auto_welcome", True):
@@ -1576,6 +1653,112 @@ class WzryGroupOpsPlugin(Star):
         if self.store.group_feature(group_id, "followup"):
             self.store.register_newcomer(group_id, new_uid, nickname)
         await self.store.asave()
+
+    async def _auto_record_invite(
+        self,
+        event: AstrMessageEvent,
+        group_id: str,
+        new_uid: str,
+        sub_type: str,
+        operator_id: str,
+    ) -> None:
+        """入群事件自动识别邀请人并记录邀请明细。
+
+        OneBot 11 的 ``group_increase`` notice：
+          · ``sub_type=invite``  → ``operator_id`` 是邀请人（被拉进群）
+          · ``sub_type=approve`` → ``operator_id`` 是审批入群的管理员，拿不到真实邀请人
+
+        拿不到邀请人时记一条「待认领」记录（``source=unclaimed``），
+        可在 WebUI 邀请记录里指定邀请人后补计分。
+        """
+        cfg = self._points_cfg()
+        if not cfg.get("auto_invite", True):
+            return
+        if group_id not in self.store.bound_groups():
+            return
+        if not new_uid:
+            return
+        if self.store.invitee_recorded(group_id, new_uid):
+            return  # 同一新人只记一次，防重复计分
+
+        inviter = ""
+        if sub_type == "invite" and operator_id and operator_id != new_uid:
+            inviter = operator_id
+        elif sub_type in ("approve", "admin") and cfg.get("count_on_approve"):
+            inviter = str(cfg.get("default_inviter") or "").strip()
+
+        bot = getattr(event, "bot", None)
+        name_cache: dict[str, str] = {}
+
+        async def _name(uid: str, fallback: str = "") -> str:
+            if not uid:
+                return ""
+            if uid in name_cache:
+                return name_cache[uid]
+            nm = ""
+            if bot is not None:
+                try:
+                    info = await bot.call_action(
+                        "get_group_member_info", group_id=int(group_id), user_id=int(uid)
+                    )
+                    if isinstance(info, dict):
+                        nm = str(info.get("card") or info.get("nickname") or "")
+                except Exception:  # noqa: BLE001
+                    nm = ""
+            name_cache[uid] = nm or fallback or uid
+            return name_cache[uid]
+
+        inviter_name = await _name(inviter) if inviter else ""
+        invitee_name = await _name(new_uid, f"新同学{new_uid[-4:]}")
+
+        points = 0
+        counted = False
+        if inviter:
+            limit = int(cfg.get("invite_daily_limit", 0) or 0)
+            if self.store.invite_quota_left(group_id, inviter, limit) > 0:
+                gain = self._rule("invite")
+                self.store.add_invite(group_id, inviter, inviter_name, points=gain)
+                points, counted = gain, True
+
+        entry: dict[str, Any] = {
+            "inviter": inviter,
+            "inviter_name": inviter_name,
+            "invitee": new_uid,
+            "invitee_name": invitee_name,
+            "ts": time.time(),
+            "time": _bj_now().strftime("%Y-%m-%d %H:%M:%S"),
+            "date": _bj_now().strftime("%Y-%m-%d"),
+            "source": "auto" if counted else ("limit" if inviter else "unclaimed"),
+            "sub_type": sub_type or "",
+            "points": points,
+            "counted": counted,
+        }
+        self.store.add_invite_log(group_id, entry)
+        await self.store.asave()
+        logger.info(
+            f"[{PLUGIN_NAME}] 邀请记录：{inviter or '(待认领)'} → {new_uid}，+{points} 分"
+        )
+
+        if counted and cfg.get("invite_broadcast", True):
+            await self._broadcast_invite(
+                group_id, inviter_name or inviter, invitee_name, points, cfg
+            )
+
+    async def _broadcast_invite(
+        self, group_id: str, inviter: str, invitee: str, points: int, cfg: dict[str, Any]
+    ) -> None:
+        """邀请成功后在群内播报（话术可在 WebUI 自定义）。"""
+        tpl = str(cfg.get("invite_broadcast_text") or DEFAULT_INVITE_BROADCAST)
+        try:
+            text = tpl.format(inviter=inviter, invitee=invitee, points=points)
+        except (KeyError, IndexError, ValueError):
+            text = DEFAULT_INVITE_BROADCAST.format(inviter=inviter, invitee=invitee, points=points)
+        try:
+            await self.context.send_message(
+                self._umo_for_group(group_id), MessageChain().message(text)
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[{PLUGIN_NAME}] 邀请播报失败: {e}")
 
     async def _maybe_auto_reply(self, event: AstrMessageEvent, group_id: str, text: str) -> None:
         """命中关键词自动应答（带冷却）。"""
@@ -2209,6 +2392,28 @@ class WzryGroupOpsPlugin(Star):
             f"+{gain} 积分，当前 {pts} 分。{tail}"
         )
 
+    @filter.command("邀请记录")
+    async def cmd_invite_log(self, event: AstrMessageEvent):
+        """查看本群邀请记录（自动记录）：/邀请记录"""
+        group_id = str(event.get_group_id() or "")
+        if not group_id:
+            yield event.plain_result("❌ 请在群内使用。")
+            return
+        rows = self.store.invite_log_of(group_id, 20)
+        if not rows:
+            yield event.plain_result("📭 本群暂无邀请记录。有新人被拉进群时会自动记录~")
+            return
+        lines = ["📨 【本群邀请记录】最近 20 条", "━━━━━━━━━━━━"]
+        for r in rows:
+            who = r.get("inviter_name") or r.get("inviter") or "待认领"
+            new = r.get("invitee_name") or r.get("invitee") or "?"
+            tag = f"+{int(r.get('points', 0) or 0)} 分" if r.get("counted") else "未计分"
+            lines.append(f"· {who} 邀请 {new}（{tag}）")
+        total = len((self.store.data.get("invite_log", {}) or {}).get(group_id) or [])
+        lines.append("━━━━━━━━━━━━")
+        lines.append(f"本群累计记录 {total} 次邀请 · 邀请分值 {self._rule('invite')} 分/人")
+        yield event.plain_result("\n".join(lines))
+
     @filter.command("兑换")
     async def cmd_redeem(self, event: AstrMessageEvent):
         """查看积分兑换表：/兑换"""
@@ -2403,7 +2608,7 @@ class WzryGroupOpsPlugin(Star):
             "/运营 ai <key> —— 用 AI 生成话术（需先开启 AI）\n"
             "/运营 采纳 <key> —— 采纳 AI 生成的话术\n\n"
             "【群成员命令】\n"
-            "/签到 /积分 /积分榜 /邀请 /兑换\n\n"
+            "/签到 /积分 /积分榜 /邀请 /邀请记录 /兑换\n\n"
             "━━━━━━━━━━━━━━\n"
             "⚡ 绑定后全自动：数据采集·新人跟进·冷场救场·沉睡唤醒\n"
             "　 积分结算·日报周榜·关键词应答·SOP推送·入群欢迎\n"
@@ -2432,6 +2637,10 @@ class WzryGroupOpsPlugin(Star):
             api(f"/{PLUGIN_NAME}/points/config/save", self.api_points_config_save, ["POST"], "保存积分配置")
             api(f"/{PLUGIN_NAME}/points/adjust", self.api_points_adjust, ["POST"], "调整积分")
             api(f"/{PLUGIN_NAME}/points/reset", self.api_points_reset, ["POST"], "清空积分")
+            api(f"/{PLUGIN_NAME}/invite/log", self.api_invite_log, ["GET"], "邀请记录明细")
+            api(f"/{PLUGIN_NAME}/invite/manual", self.api_invite_manual, ["POST"], "手动补录邀请")
+            api(f"/{PLUGIN_NAME}/invite/claim", self.api_invite_claim, ["POST"], "认领待归属邀请")
+            api(f"/{PLUGIN_NAME}/invite/undo", self.api_invite_undo, ["POST"], "撤销邀请记录")
             api(f"/{PLUGIN_NAME}/schedule", self.api_schedule_get, ["GET"], "获取推送计划")
             api(f"/{PLUGIN_NAME}/schedule/save", self.api_schedule_save, ["POST"], "保存推送计划")
             api(f"/{PLUGIN_NAME}/stats", self.api_stats_get, ["GET"], "获取运营数据")
@@ -2457,7 +2666,7 @@ class WzryGroupOpsPlugin(Star):
         cfg = self.store.data.get("config", {})
         return json_response({
             "plugin": PLUGIN_NAME,
-            "version": "1.0.0",
+            "version": "1.1.0",
             "bound_groups": len(self.store.bound_groups()),
             "auto_welcome": cfg.get("auto_welcome", True),
             "schedule_enabled": cfg.get("schedule_enabled", True),
@@ -2735,6 +2944,16 @@ class WzryGroupOpsPlugin(Star):
                 cfg["invite_daily_limit"] = max(0, min(999, int(payload["invite_daily_limit"])))
             except (TypeError, ValueError):
                 pass
+        # 邀请自动捕获相关
+        for flag in ("auto_invite", "invite_broadcast", "count_on_approve"):
+            if flag in payload:
+                cfg[flag] = bool(payload[flag])
+        if "invite_broadcast_text" in payload:
+            cfg["invite_broadcast_text"] = (
+                str(payload["invite_broadcast_text"] or "").strip() or DEFAULT_INVITE_BROADCAST
+            )
+        if "default_inviter" in payload:
+            cfg["default_inviter"] = re.sub(r"\D", "", str(payload["default_inviter"] or ""))[:12]
         # 兑换表
         if isinstance(payload.get("redeem_items"), list):
             items = []
@@ -2760,6 +2979,165 @@ class WzryGroupOpsPlugin(Star):
         self.store.data["points_config"] = cfg
         await self.store.asave()
         return json_response({"saved": True, "config": cfg})
+
+    # ---------------- 邀请记录（自动捕获 / 手动补录 / 认领 / 撤销） ----------------
+    def _name_of(self, group_id: str, uid: str) -> str:
+        """取已知群昵称（未知则返回空，避免把 QQ 号当昵称展示）。"""
+        if not uid:
+            return ""
+        try:
+            u = self.store.get_user(group_id, uid)
+        except Exception:  # noqa: BLE001
+            return ""
+        nm = str(u.get("name") or "")
+        return "" if nm == str(uid) else nm
+
+    def _invite_credit(self, group_id: str, inviter: str) -> tuple[int, bool]:
+        """按配置给邀请人计分；返回 (得分, 是否已计分)。"""
+        if not inviter:
+            return 0, False
+        cfg = self._points_cfg()
+        limit = int(cfg.get("invite_daily_limit", 0) or 0)
+        if self.store.invite_quota_left(group_id, inviter, limit) <= 0:
+            return 0, False
+        gain = self._rule("invite")
+        self.store.add_invite(group_id, inviter, self._name_of(group_id, inviter), points=gain)
+        return gain, True
+
+    async def api_invite_log(self):
+        groups = self.store.bound_groups()
+        group_id = str(request.query.get("group_id", "") or "").strip()
+        if not group_id or group_id not in groups:
+            group_id = next(iter(groups), "")
+        try:
+            limit = max(1, min(200, int(request.query.get("limit", 100))))
+        except (TypeError, ValueError):
+            limit = 100
+
+        rows = self.store.invite_log_of(group_id, limit) if group_id else []
+        all_rows = (self.store.data.get("invite_log", {}) or {}).get(group_id) or []
+
+        summary: dict[str, dict[str, Any]] = {}
+        for r in all_rows:
+            who = str(r.get("inviter") or "")
+            key = who or "__unclaimed__"
+            s = summary.setdefault(key, {
+                "inviter": who,
+                "name": (r.get("inviter_name") or "") or ("待认领" if not who else who),
+                "count": 0,
+                "points": 0,
+            })
+            s["count"] += 1
+            s["points"] += int(r.get("points", 0) or 0)
+
+        cfg = self._points_cfg()
+        return json_response({
+            "group_id": group_id,
+            "groups": [
+                {"group_id": g, "name": (v or {}).get("name") or g}
+                for g, v in groups.items()
+            ],
+            "entries": rows,
+            "summary": sorted(summary.values(), key=lambda x: (x["count"], x["points"]), reverse=True),
+            "total": len(all_rows),
+            "unclaimed": sum(1 for r in all_rows if not r.get("inviter")),
+            "config": {
+                "auto_invite": bool(cfg.get("auto_invite", True)),
+                "invite_broadcast": bool(cfg.get("invite_broadcast", True)),
+                "invite_broadcast_text": str(cfg.get("invite_broadcast_text") or DEFAULT_INVITE_BROADCAST),
+                "count_on_approve": bool(cfg.get("count_on_approve", False)),
+                "default_inviter": str(cfg.get("default_inviter") or ""),
+                "invite_points": self._rule("invite"),
+                "invite_daily_limit": int(cfg.get("invite_daily_limit", 0) or 0),
+            },
+        })
+
+    async def api_invite_manual(self):
+        """手动补录一次邀请（自动捕获漏记时使用）。"""
+        payload = await request.json(default={})
+        group_id = str(payload.get("group_id", "") or "").strip()
+        inviter = re.sub(r"\D", "", str(payload.get("inviter", "") or ""))[:12]
+        invitee = re.sub(r"\D", "", str(payload.get("invitee", "") or ""))[:12]
+        if group_id not in self.store.bound_groups():
+            return error_response("请选择已绑定的群", status_code=400)
+        if not inviter:
+            return error_response("请填写邀请人 QQ", status_code=400)
+        if not invitee:
+            return error_response("请填写被邀请人 QQ", status_code=400)
+        if inviter == invitee:
+            return error_response("邀请人和被邀请人不能是同一个 QQ", status_code=400)
+        if self.store.invitee_recorded(group_id, invitee):
+            return error_response("该 QQ 已有邀请记录（同一新人只记一次）", status_code=409)
+
+        points, counted = self._invite_credit(group_id, inviter)
+        entry: dict[str, Any] = {
+            "inviter": inviter,
+            "inviter_name": self._name_of(group_id, inviter),
+            "invitee": invitee,
+            "invitee_name": self._name_of(group_id, invitee) or f"新同学{invitee[-4:]}",
+            "ts": time.time(),
+            "time": _bj_now().strftime("%Y-%m-%d %H:%M:%S"),
+            "date": _bj_now().strftime("%Y-%m-%d"),
+            "source": "manual",
+            "sub_type": "manual",
+            "points": points,
+            "counted": counted,
+            "note": str(payload.get("note", "") or "").strip(),
+        }
+        self.store.add_invite_log(group_id, entry)
+        await self.store.asave()
+        return json_response({"ok": True, "entry": entry, "counted": counted, "points": points})
+
+    async def api_invite_claim(self):
+        """给「待认领」记录指定邀请人并补计分。"""
+        payload = await request.json(default={})
+        group_id = str(payload.get("group_id", "") or "").strip()
+        inviter = re.sub(r"\D", "", str(payload.get("inviter", "") or ""))[:12]
+        if group_id not in self.store.bound_groups():
+            return error_response("请选择已绑定的群", status_code=400)
+        if not inviter:
+            return error_response("请填写邀请人 QQ", status_code=400)
+        rec = self.store.find_invite_log(group_id, payload.get("ts"))
+        if not rec:
+            return error_response("找不到该邀请记录", status_code=404)
+        if rec.get("inviter"):
+            return error_response("该记录已有邀请人", status_code=400)
+        if str(rec.get("invitee")) == inviter:
+            return error_response("邀请人和被邀请人不能是同一个 QQ", status_code=400)
+
+        points, counted = self._invite_credit(group_id, inviter)
+        rec["inviter"] = inviter
+        rec["inviter_name"] = self._name_of(group_id, inviter)
+        rec["points"] = points
+        rec["counted"] = counted
+        rec["source"] = "auto" if counted else "limit"
+        rec["claimed_at"] = _bj_now().strftime("%Y-%m-%d %H:%M:%S")
+        await self.store.asave()
+
+        cfg = self._points_cfg()
+        if counted and cfg.get("invite_broadcast", True):
+            await self._broadcast_invite(
+                group_id,
+                rec.get("inviter_name") or inviter,
+                rec.get("invitee_name") or str(rec.get("invitee") or ""),
+                points,
+                cfg,
+            )
+        return json_response({"ok": True, "entry": rec})
+
+    async def api_invite_undo(self):
+        """撤销一条邀请记录（已计分的会扣回积分与邀请数）。"""
+        payload = await request.json(default={})
+        group_id = str(payload.get("group_id", "") or "").strip()
+        if group_id not in self.store.bound_groups():
+            return error_response("请选择已绑定的群", status_code=400)
+        rec = self.store.remove_invite_log(group_id, payload.get("ts"))
+        if not rec:
+            return error_response("找不到该邀请记录", status_code=404)
+        if rec.get("counted") and rec.get("inviter"):
+            self.store.revoke_invite(group_id, str(rec["inviter"]), int(rec.get("points", 0) or 0))
+        await self.store.asave()
+        return json_response({"ok": True, "removed": rec})
 
     async def api_schedule_get(self):
         return json_response({

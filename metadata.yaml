@@ -1,12 +1,13 @@
 name: astrbot_plugin_wzry_group_ops
 display_name: 王者荣耀私域运营助手
-short_desc: 王者荣耀开黑交友群自动化运营引擎（AI实时推送+周榜TopN+日报多接收人+积分可配置）
+short_desc: 王者荣耀开黑交友群自动化运营引擎（邀请自动追踪+AI实时推送+积分可配置+10项自动化任务）
 desc: >-
   面向「王者荣耀交友扩列 QQ 群」的自动化私域运营引擎。绑定群后全自动运转：
   数据采集 / 新人跟进 / 冷场救场 / 沉睡唤醒 / 积分结算 / 日报周榜 / 关键词应答 /
-  SOP 推送 / 入群欢迎，共 10 项自动化任务。内置 16 套群运营话术模板，
-  并提供可视化 WebUI 作战台（自动化引擎 / 状态 / 内容推送 / 积分 / 数据看板 / 推送计划 / 运营手册）。
-version: 1.0.0
+  SOP 推送 / 入群欢迎，共 10 项自动化任务。新人入群自动识别邀请人并计分，
+  邀请明细可查可导出。内置 16 套群运营话术模板，并提供可视化 WebUI 作战台
+  （自动化引擎 / 状态 / 内容推送 / 邀请记录 / 积分 / 数据看板 / 推送计划 / 运营手册）。
+version: 1.1.0
 author: WorkBuddy
 repo: https://github.com/xinger12/astrbot_plugin_wzry_group_ops
 astrbot_version: ">=4.26,<5"

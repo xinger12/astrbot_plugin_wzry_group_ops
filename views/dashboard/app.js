@@ -41,6 +41,8 @@ const state = {
   pointsCfg: {},
   pointRuleMeta: [],
   redeemItems: [],
+  inviteCfg: {},
+  inviteRows: [],
 };
 
 /** 自动化任务元数据（key 与后端 automation 配置一致） */
@@ -108,6 +110,37 @@ function toast(msg, isErr = false) {
   box.className = "toast show" + (isErr ? " err" : "");
   clearTimeout(box.__t);
   box.__t = setTimeout(() => { box.className = "toast"; }, 2600);
+}
+
+/**
+ * 页内二次点击确认。替代 window.confirm()——视图运行在受限 iframe 中，
+ * 原生 confirm 会被沙箱静默拦截并返回 false，表现为"点了完全没反应"。
+ * 用法：inlineConfirm($("btn"), "确定执行？", () => doIt());
+ */
+function inlineConfirm(btn, message, onConfirm, ms = 8000) {
+  if (!btn) {
+    onConfirm();
+    return;
+  }
+  if (btn.dataset.confirming === "1") {
+    clearTimeout(Number(btn.dataset.timer || 0));
+    btn.dataset.confirming = "0";
+    if (btn.dataset.orig) btn.textContent = btn.dataset.orig;
+    btn.classList.remove("confirming");
+    onConfirm();
+    return;
+  }
+  btn.dataset.confirming = "1";
+  btn.dataset.orig = btn.textContent;
+  btn.classList.add("confirming");
+  btn.textContent = "确认？再点一次";
+  toast(message);
+  const t = setTimeout(() => {
+    btn.dataset.confirming = "0";
+    btn.classList.remove("confirming");
+    if (btn.dataset.orig) btn.textContent = btn.dataset.orig;
+  }, ms);
+  btn.dataset.timer = String(t);
 }
 
 async function copyText(text) {
@@ -298,30 +331,81 @@ async function bindSelected() {
   setResult(res, `✅ 已绑定 ${ok} / ${ids.length} 个群`);
 }
 
+/* 解绑确认状态（不使用 window.confirm —— AstrBot WebUI 的 iframe 会拦掉原生弹窗，
+   导致点击后直接 return、看起来"没反应"。改用内联二次点击确认。） */
+let _pendingUnbind = { ids: [], timer: null };
+
+function _resetUnbindBtn() {
+  const btn = $("unbindSelected");
+  if (btn) {
+    btn.classList.remove("confirming");
+    btn.textContent = "解绑选中";
+  }
+  _pendingUnbind = { ids: [], timer: null };
+}
+
 async function unbindSelected() {
   const box = $("scanList");
   const res = $("scanResult");
+  const btn = $("unbindSelected");
   if (!box) return;
+
   const ids = [...box.querySelectorAll("[data-scan]")]
     .filter((el) => el.checked && el.dataset.bound === "1")
     .map((el) => el.dataset.scan);
+
   if (!ids.length) {
+    _resetUnbindBtn();
     setResult(res, "请先勾选要解绑的群（仅已绑定的群可解绑）", true);
     return;
   }
-  if (!window.confirm(`确认解绑 ${ids.length} 个群？该群的运营数据会保留，但不再自动运营。`)) return;
+
+  // 第二次点击（且选中项未变）→ 真正执行
+  if (_pendingUnbind.timer && _pendingUnbind.ids.join(",") === ids.join(",")) {
+    clearTimeout(_pendingUnbind.timer);
+    _resetUnbindBtn();
+    await doUnbind(ids);
+    return;
+  }
+
+  // 第一次点击 → 进入待确认状态
+  _resetUnbindBtn();
+  _pendingUnbind.ids = ids;
+  if (btn) {
+    btn.classList.add("confirming");
+    btn.textContent = `确认解绑 ${ids.length} 个群（再点一次）`;
+  }
+  setResult(
+    res,
+    `⚠️ 即将解绑 ${ids.length} 个群，运营数据会保留但不再自动运营。` +
+      `请在 8 秒内再点一次「确认解绑」按钮执行。`
+  );
+  _pendingUnbind.timer = setTimeout(() => {
+    _resetUnbindBtn();
+    setResult(res, "已取消解绑（超时未再次确认）。");
+  }, 8000);
+}
+
+async function doUnbind(ids) {
+  const res = $("scanResult");
+  const failed = [];
   let ok = 0;
   for (const gid of ids) {
     try {
-      await bridge.apiPost("group/bind", { group_id: gid, action: "unbind" });
+      const r = await bridge.apiPost("group/bind", { group_id: gid, action: "unbind" });
+      if (r && r.ok === false) throw new Error(r.message || "解绑失败");
       ok++;
     } catch (e) {
+      failed.push(gid);
       console.error("解绑失败", gid, e);
     }
   }
   await loadGroups();
   await scanGroups(true);
-  setResult(res, `✅ 已解绑 ${ok} / ${ids.length} 个群`);
+  setResult(
+    res,
+    `✅ 已解绑 ${ok} / ${ids.length} 个群` + (failed.length ? `，失败：${failed.join("、")}` : "")
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -636,6 +720,229 @@ async function savePointsConfig() {
   } catch (e) {
     setResult($("ptCfgResult"), "保存失败：" + (e && e.message ? e.message : e), true);
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* 邀请记录（自动捕获 / 认领 / 补录 / 撤销 / 导出）                     */
+/* ------------------------------------------------------------------ */
+
+const DEFAULT_INVITE_TPL =
+  "🎉 感谢 {inviter} 拉来了新同学 {invitee}，邀请积分 +{points}！";
+
+const INVITE_SRC_LABEL = {
+  auto: "自动记录",
+  manual: "手动补录",
+  unclaimed: "待认领",
+  limit: "超限未计分",
+};
+
+function renderInviteCfg() {
+  const c = state.inviteCfg || {};
+  if ($("ivAuto")) $("ivAuto").checked = c.auto_invite !== false;
+  if ($("ivBroadcast")) $("ivBroadcast").checked = c.invite_broadcast !== false;
+  if ($("ivCountApprove")) $("ivCountApprove").checked = !!c.count_on_approve;
+  if ($("ivDefaultInviter")) $("ivDefaultInviter").value = c.default_inviter || "";
+  if ($("ivTpl")) $("ivTpl").value = c.invite_broadcast_text || DEFAULT_INVITE_TPL;
+}
+
+async function loadInviteLog(silent) {
+  const gid = $("ivGroup")?.value || "";
+  try {
+    const d = await bridge.apiGet("invite/log", { group_id: gid, limit: 100 });
+    state.inviteCfg = d.config || {};
+    state.inviteRows = d.entries || [];
+
+    const sel = $("ivGroup");
+    if (sel && Array.isArray(d.groups)) {
+      const cur = d.group_id || "";
+      sel.innerHTML = d.groups.length
+        ? d.groups
+            .map(
+              (g) =>
+                `<option value="${escapeHtml(g.group_id)}">${escapeHtml(g.name)}</option>`
+            )
+            .join("")
+        : `<option value="">（暂无绑定群）</option>`;
+      sel.value = cur;
+    }
+    renderInviteCfg();
+    renderInviteTable(state.inviteRows);
+
+    const sum = $("ivSummary");
+    if (sum) {
+      const top = (d.summary || [])
+        .slice(0, 3)
+        .map((s) => `${s.name}(${s.count})`)
+        .join(" · ");
+      sum.textContent =
+        `共 ${d.total || 0} 条` +
+        (d.unclaimed ? ` · ${d.unclaimed} 条待认领` : "") +
+        (top ? ` · 邀请榜：${top}` : "");
+    }
+  } catch (e) {
+    if (!silent) {
+      setResult($("ivResult"), "加载邀请记录失败：" + (e && e.message ? e.message : e), true);
+    }
+  }
+}
+
+function renderInviteTable(rows) {
+  const box = $("ivTable");
+  if (!box) return;
+  if (!rows.length) {
+    box.innerHTML = `<div class="empty">暂无邀请记录。开启「自动捕获入群邀请」后，新人入群会自动识别邀请人并计分。</div>`;
+    return;
+  }
+  const head = `<div class="inv-row head">
+    <span>时间</span><span>邀请人</span><span>新人</span><span>来源</span><span>积分</span><span>操作</span>
+  </div>`;
+  const body = rows
+    .map((r) => {
+      const ts = escapeHtml(String(r.ts));
+      const who = r.inviter
+        ? `${escapeHtml(r.inviter_name || r.inviter)}<div class="meta">QQ ${escapeHtml(r.inviter)}</div>`
+        : `<span style="color:var(--text3)">—</span>`;
+      const newbie = `${escapeHtml(r.invitee_name || r.invitee || "?")}<div class="meta">QQ ${escapeHtml(r.invitee || "")}</div>`;
+      const src = INVITE_SRC_LABEL[r.source] || r.source || "—";
+      const pts = r.counted
+        ? `<span style="color:var(--brand)"><b>+${r.points || 0}</b></span>`
+        : `<span style="color:var(--text3)">未计分</span>`;
+      const ops = r.inviter
+        ? `<button class="del-btn" data-inv-undo="${ts}">撤销</button>`
+        : `<button class="btn sm" data-inv-claim="${ts}">认领</button>`;
+      return `<div class="inv-row">
+        <span class="meta" style="margin:0">${escapeHtml(r.time || r.date || "")}</span>
+        <span>${who}</span>
+        <span>${newbie}</span>
+        <span>${escapeHtml(src)}</span>
+        <span>${pts}</span>
+        <span class="inv-ops">${ops}</span>
+      </div>`;
+    })
+    .join("");
+  box.innerHTML = head + body;
+
+  box.querySelectorAll("[data-inv-undo]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const ts = el.dataset.invUndo;
+      inlineConfirm(el, "再点一次即撤销该邀请记录（已计分的会扣回）", async () => {
+        try {
+          await bridge.apiPost("invite/undo", { group_id: $("ivGroup").value, ts });
+          await loadInviteLog(true);
+          toast("✅ 已撤销该邀请记录");
+        } catch (err) {
+          toast("撤销失败：" + (err && err.message ? err.message : err), true);
+        }
+      });
+    })
+  );
+
+  box.querySelectorAll("[data-inv-claim]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const ts = el.dataset.invClaim;
+      const cell = el.parentElement;
+      cell.innerHTML = `<input type="text" class="inv-claim-input" placeholder="邀请人QQ" />
+        <button class="btn sm primary" data-do-claim="${escapeHtml(ts)}">确定</button>`;
+      const input = cell.querySelector("input");
+      if (input) input.focus();
+      cell.querySelector("[data-do-claim]").addEventListener("click", async () => {
+        const inviter = (input && input.value.trim()) || "";
+        if (!inviter) {
+          toast("请输入邀请人 QQ", true);
+          return;
+        }
+        try {
+          await bridge.apiPost("invite/claim", {
+            group_id: $("ivGroup").value,
+            ts,
+            inviter,
+          });
+          await loadInviteLog(true);
+          toast("✅ 已认领并计分");
+        } catch (err) {
+          toast("认领失败：" + (err && err.message ? err.message : err), true);
+        }
+      });
+    })
+  );
+}
+
+async function saveInviteConfig() {
+  const payload = {
+    auto_invite: !!$("ivAuto")?.checked,
+    invite_broadcast: !!$("ivBroadcast")?.checked,
+    count_on_approve: !!$("ivCountApprove")?.checked,
+    default_inviter: $("ivDefaultInviter")?.value || "",
+    invite_broadcast_text: $("ivTpl")?.value || "",
+  };
+  try {
+    const r = await bridge.apiPost("points/config/save", payload);
+    state.inviteCfg = Object.assign({}, state.inviteCfg, r.config || {});
+    renderInviteCfg();
+    setResult($("ivCfgResult"), "✅ 邀请设置已保存");
+  } catch (e) {
+    setResult($("ivCfgResult"), "保存失败：" + (e && e.message ? e.message : e), true);
+  }
+}
+
+async function addInviteManual() {
+  const gid = $("ivGroup")?.value || "";
+  const inviter = ($("ivInviter")?.value || "").trim();
+  const invitee = ($("ivInvitee")?.value || "").trim();
+  if (!gid) {
+    setResult($("ivResult"), "请先选择群", true);
+    return;
+  }
+  if (!inviter || !invitee) {
+    setResult($("ivResult"), "请填写邀请人和新人的 QQ 号", true);
+    return;
+  }
+  try {
+    const r = await bridge.apiPost("invite/manual", { group_id: gid, inviter, invitee });
+    if ($("ivInviter")) $("ivInviter").value = "";
+    if ($("ivInvitee")) $("ivInvitee").value = "";
+    await loadInviteLog(true);
+    setResult(
+      $("ivResult"),
+      r.counted ? `✅ 已补录，邀请人 +${r.points} 分` : "✅ 已补录（超出每日上限，未计分）"
+    );
+  } catch (e) {
+    setResult($("ivResult"), "补录失败：" + (e && e.message ? e.message : e), true);
+  }
+}
+
+function exportInviteCsv() {
+  const rows = state.inviteRows || [];
+  if (!rows.length) {
+    toast("没有可导出的邀请记录", true);
+    return;
+  }
+  const head = ["时间", "邀请人QQ", "邀请人昵称", "新人QQ", "新人昵称", "来源", "积分", "是否计分"];
+  const lines = [head.join(",")].concat(
+    rows.map((r) =>
+      [
+        r.time || r.date || "",
+        r.inviter || "",
+        r.inviter_name || "",
+        r.invitee || "",
+        r.invitee_name || "",
+        INVITE_SRC_LABEL[r.source] || r.source || "",
+        r.points || 0,
+        r.counted ? "是" : "否",
+      ]
+        .map((x) => `"${String(x).replace(/"/g, '""')}"`)
+        .join(",")
+    )
+  );
+  const blob = new Blob(["\ufeff" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `邀请记录_${$("ivGroup")?.value || "群"}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  toast("✅ 已导出 CSV");
 }
 
 /* ------------------------------------------------------------------ */
@@ -1169,8 +1476,10 @@ function bindEvents() {
 
   // ---- 群管理：欢迎词 ----
   $("saveWelcome")?.addEventListener("click", () => saveWelcome(false));
-  $("resetWelcome")?.addEventListener("click", () => {
-    if (confirm("确定恢复为默认欢迎词？当前自定义内容将被覆盖。")) saveWelcome(true);
+  $("resetWelcome")?.addEventListener("click", (e) => {
+    inlineConfirm(e.currentTarget, "再点一次即恢复默认欢迎词（当前自定义内容会被覆盖）", () =>
+      saveWelcome(true)
+    );
   });
   $("previewWelcome")?.addEventListener("click", async () => {
     try {
@@ -1251,17 +1560,28 @@ function bindEvents() {
   $("ptsGroup")?.addEventListener("change", loadPoints);
   $("addRedeem")?.addEventListener("click", addRedeemItem);
   $("savePointsCfg")?.addEventListener("click", savePointsConfig);
-  $("resetPts")?.addEventListener("click", async () => {
+
+  // 邀请记录
+  $("loadInvite")?.addEventListener("click", () => loadInviteLog());
+  $("ivGroup")?.addEventListener("change", () => loadInviteLog());
+  $("saveInviteCfg")?.addEventListener("click", saveInviteConfig);
+  $("addInvite")?.addEventListener("click", addInviteManual);
+  $("exportInvite")?.addEventListener("click", exportInviteCsv);
+  $("resetPts")?.addEventListener("click", (e) => {
     const gid = $("ptsGroup").value;
-    if (!gid) return;
-    if (!confirm("确定清空该群所有成员积分？此操作不可恢复。")) return;
-    try {
-      await bridge.apiPost("points/reset", { group_id: gid });
-      setResult($("adjResult"), "✅ 已清空该群积分");
-      await loadPoints();
-    } catch (e) {
-      setResult($("adjResult"), "清空失败：" + e.message, true);
+    if (!gid) {
+      toast("请先选择要清空的群", true);
+      return;
     }
+    inlineConfirm(e.currentTarget, "再点一次即清空该群所有成员积分（不可恢复）", async () => {
+      try {
+        await bridge.apiPost("points/reset", { group_id: gid });
+        setResult($("adjResult"), "✅ 已清空该群积分");
+        await loadPoints();
+      } catch (err) {
+        setResult($("adjResult"), "清空失败：" + err.message, true);
+      }
+    });
   });
   $("doAdj")?.addEventListener("click", async () => {
     const gid = $("adjGroup").value;
@@ -1353,6 +1673,7 @@ async function init() {
   await loadSchedule();
   await loadPoints();
   await loadPointsConfig();
+  await loadInviteLog(true);
   await loadStats();
   await loadAutomation();
   await loadActivity();
