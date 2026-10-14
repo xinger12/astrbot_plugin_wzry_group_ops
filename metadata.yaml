@@ -6,13 +6,17 @@ desc: >-
   数据采集 / 新人跟进 / 冷场救场 / 沉睡唤醒 / 积分结算 / 日报周榜 / 关键词应答 /
   SOP 推送 / 入群欢迎，共 10 项自动化任务。内置 16 套群运营话术模板，
   并提供可视化 WebUI 作战台（自动化引擎 / 状态 / 内容推送 / 积分 / 数据看板 / 推送计划 / 运营手册）。
-version: v1.0.0
+version: 1.0.0
 author: WorkBuddy
-# ↓↓↓ 想启用 AstrBot 的「在线更新」功能，把下面换成你自己的公开 GitHub 仓库地址 ↓↓↓
-# 改完后用「从链接安装」重装一次（而不是上传 zip），之后就能像商店插件一样一键更新。
-# 详见插件包内「在线更新说明.md」
 repo: https://github.com/xinger12/astrbot_plugin_wzry_group_ops
 astrbot_version: ">=4.26,<5"
 support_platforms:
   - aiocqhttp
   - qq_official
+social_link: https://github.com/xinger12
+tags:
+  - 王者荣耀
+  - 群管理
+  - 自动化
+  - AI
+  - QQ群
