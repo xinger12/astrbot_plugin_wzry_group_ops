@@ -39,6 +39,7 @@ const state = {
   aiProviderAvailable: false,
   aiProviders: [],
   pointsCfg: {},
+  quizCfg: {},
   pointRuleMeta: [],
   redeemItems: [],
   inviteCfg: {},
@@ -177,7 +178,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
 /* ------------------------------------------------------------------ */
 
 function fillGroupSelects() {
-  const ids = ["pushGroup", "ptsGroup", "adjGroup", "stGroup", "actGroup"];
+  const ids = ["pushGroup", "ptsGroup", "adjGroup", "stGroup", "actGroup", "qzGroup", "ivGroup"];
   const opts = state.groups.length
     ? state.groups.map((g) => `<option value="${escapeHtml(g.group_id)}">${escapeHtml(g.name)} (${escapeHtml(g.group_id)})</option>`).join("")
     : `<option value="">（暂无已绑定群）</option>`;
@@ -719,6 +720,81 @@ async function savePointsConfig() {
     setResult($("ptCfgResult"), "✅ 积分配置已保存，群内命令即时生效");
   } catch (e) {
     setResult($("ptCfgResult"), "保存失败：" + (e && e.message ? e.message : e), true);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 答题活动（v1.2.0：答对真实自动加分 + 防刷）                          */
+/* ------------------------------------------------------------------ */
+
+async function loadQuiz() {
+  try {
+    const d = await bridge.apiGet("quiz/config");
+    const c = d.config || {};
+    state.quizCfg = c;
+    if ($("qzEnabled")) $("qzEnabled").checked = c.quiz_enabled !== false;
+    if ($("qzAiJudge")) $("qzAiJudge").checked = !!c.quiz_ai_judge;
+    if ($("qzReward")) $("qzReward").value = c.quiz_reward ?? 10;
+    if ($("qzLimit")) $("qzLimit").value = c.quiz_limit ?? 3;
+    if ($("qzTimeout")) $("qzTimeout").value = c.quiz_timeout ?? 600;
+    const bank = $("qzBankSize");
+    if (bank) bank.textContent = d.bank_size || 0;
+    renderQuizRunning(d.running || {});
+  } catch (e) {
+    console.error("加载答题配置失败:", e);
+  }
+}
+
+function renderQuizRunning(running) {
+  const box = $("qzRunning");
+  if (!box) return;
+  const rows = Object.entries(running);
+  if (!rows.length) {
+    box.innerHTML = '<div class="empty">当前没有进行中的题目。点「立即出题」推一道到群里，或等每日午后互动自动出题。</div>';
+    return;
+  }
+  box.innerHTML = rows
+    .map(([gid, r]) => `<div class="item">
+      <div><b>🧠 ${escapeHtml(r.q || "")}</b>
+      <div class="meta">群 ${escapeHtml(gid)} · 答对 +${r.reward ?? 0} 分 · 已获奖 ${r.winners || 0}${r.limit > 0 ? ` / ${r.limit}` : "（不限人数）"}</div></div>
+    </div>`)
+    .join("");
+}
+
+async function saveQuizConfig() {
+  const payload = {
+    quiz_enabled: !!$("qzEnabled")?.checked,
+    quiz_ai_judge: !!$("qzAiJudge")?.checked,
+    quiz_reward: Number($("qzReward")?.value) || 0,
+    quiz_limit: Number($("qzLimit")?.value) || 0,
+    quiz_timeout: Number($("qzTimeout")?.value) || 600,
+  };
+  try {
+    const r = await bridge.apiPost("quiz/config/save", payload);
+    state.quizCfg = r.config || state.quizCfg;
+    setResult($("qzCfgResult"), "✅ 答题配置已保存，群内即时生效");
+    await loadQuiz();
+  } catch (e) {
+    setResult($("qzCfgResult"), "保存失败：" + (e && e.message ? e.message : e), true);
+  }
+}
+
+async function startQuiz() {
+  const gid = $("qzGroup")?.value || "";
+  try {
+    const r = await bridge.apiPost("quiz/start", { group_id: gid });
+    if (r.started) {
+      setResult($("qzStartResult"), "✅ 已推送到群，群友直接回答案即可");
+      toast("出题成功，已推送到群");
+    } else if (r.reason === "running") {
+      setResult($("qzStartResult"), "⏳ 该群已有进行中的题目，等它结束再出下一题");
+    } else {
+      setResult($("qzStartResult"), "⚠️ 未能出题", true);
+    }
+    await loadQuiz();
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e);
+    setResult($("qzStartResult"), "出题失败：" + msg, true);
   }
 }
 
@@ -1446,6 +1522,11 @@ function bindEvents() {
   $("bindSelected")?.addEventListener("click", () => bindSelected());
   $("unbindSelected")?.addEventListener("click", () => unbindSelected());
 
+  // ---- 答题活动 ----
+  $("saveQuizCfg")?.addEventListener("click", saveQuizConfig);
+  $("doQuizStart")?.addEventListener("click", startQuiz);
+  $("loadQuizStatus")?.addEventListener("click", loadQuiz);
+
   // ---- AI 话术 ----
   $("saveAi")?.addEventListener("click", saveAI);
   $("aiProvider")?.addEventListener("change", () => renderProviderBadge(null, state.aiProviders));
@@ -1673,6 +1754,7 @@ async function init() {
   await loadSchedule();
   await loadPoints();
   await loadPointsConfig();
+  await loadQuiz();
   await loadInviteLog(true);
   await loadStats();
   await loadAutomation();

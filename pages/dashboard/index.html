@@ -34,12 +34,18 @@
 
       <!-- ============ 自动化引擎 ============ -->
       <section class="panel active" id="p-automation">
-        <!-- ===== v2.6 新增设置（置顶醒目） ===== -->
+        <!-- ===== v1.2.0 新增设置（置顶醒目） ===== -->
         <div class="card new-card">
-          <h2>🆕 v2.6 新增设置 <span class="new-badge">NEW</span></h2>
-          <p class="hint">本次更新新增：①周榜展示人数（防消息过长）②AI 定时推送实时生成（每次内容不同）③日报接收人（可指定 QQ）。</p>
+          <h2>🆕 v1.2.0 新增设置 <span class="new-badge">NEW</span></h2>
+          <p class="hint">本次更新新增：①<b>答题活动</b>（答对真实自动加分，防重复刷分，在「积分管理」页）②推送统计改为按异常判定（修好"显示失败其实已推送"）③AI 语气重写（不再强行拐打游戏，减少幻觉）。</p>
           <div class="row" style="margin-top:12px">
             <div class="field" style="flex:2">
+              <label>🧠 答题活动入口</label>
+              <p class="hint" style="margin:0">到「<b>积分管理</b>」标签页 → 「🧠 答题活动」卡片：开关、分值、每轮获奖人数、立即出题都在那里。群内也可直接发 <code>/答题</code>。</p>
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field">
               <label>日报接收人 QQ <span class="new-badge sm">新</span>（多个用逗号分隔，留空则发到群）</label>
               <input type="text" id="aReportAdmin" placeholder="如：123456, 654321" />
             </div>
@@ -430,6 +436,35 @@
           </div>
         </div>
 
+        <div class="card new-card">
+          <h2>🧠 答题活动 <span class="new-badge">NEW</span></h2>
+          <p class="hint">
+            答对<b>真实自动加分</b>：机器人出题后，群友直接在群里回答案即可，系统按题库判定并立即加分播报。<br>
+            防刷机制：同一题每人只能获奖一次；每轮获奖人数有限（可设 0 = 不限）；超时自动公布答案开下一题。
+          </p>
+
+          <h3 class="sub-h">① 活动开关与规则</h3>
+          <div class="row">
+            <label class="sw"><input type="checkbox" id="qzEnabled" /><span>启用答题活动</span></label>
+            <label class="sw"><input type="checkbox" id="qzAiJudge" /><span>允许 AI 辅助判定（接近答案也算对）</span></label>
+            <div class="field"><label>答对得分（分）</label><input type="number" id="qzReward" min="0" max="999" placeholder="10" /></div>
+            <div class="field"><label>每轮最多获奖人数（0=不限）</label><input type="number" id="qzLimit" min="0" max="99" placeholder="3" /></div>
+            <div class="field"><label>每题有效期（秒）</label><input type="number" id="qzTimeout" min="60" max="3600" placeholder="600" /></div>
+            <button class="btn primary" style="align-self:end" id="saveQuizCfg">保存答题配置</button>
+            <span id="qzCfgResult" class="result" style="align-self:end;margin-bottom:8px"></span>
+          </div>
+
+          <h3 class="sub-h">② 立即出一题（推送到群）</h3>
+          <div class="row">
+            <div class="field"><label>目标群</label><select id="qzGroup"></select></div>
+            <button class="btn primary" id="doQuizStart">立即出题</button>
+            <button class="btn" id="loadQuizStatus">刷新进行中</button>
+            <span id="qzStartResult" class="result" style="align-self:center"></span>
+          </div>
+          <p class="hint">题库共 <b id="qzBankSize">0</b> 道题，会轮换出题不重复；群内也可以直接发 <code>/答题</code> 出题。</p>
+          <div id="qzRunning" class="list" style="margin-top:10px"></div>
+        </div>
+
         <div class="card">
           <h2>💡 积分规则（群内命令）</h2>
           <div class="rule-grid" id="ptRuleGrid">
@@ -529,7 +564,7 @@
         </div>
       </section>
 
-      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.1.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
+      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.2.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
     </div>
 
     <!-- 显式引入 bridge SDK：AstrBot 返回 HTML 时会把它改写为带鉴权令牌的地址。

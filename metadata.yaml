@@ -7,7 +7,7 @@ desc: >-
   SOP 推送 / 入群欢迎，共 10 项自动化任务。新人入群自动识别邀请人并计分，
   邀请明细可查可导出。内置 16 套群运营话术模板，并提供可视化 WebUI 作战台
   （自动化引擎 / 状态 / 内容推送 / 邀请记录 / 积分 / 数据看板 / 推送计划 / 运营手册）。
-version: 1.1.0
+version: 1.2.0
 author: WorkBuddy
 repo: https://github.com/xinger12/astrbot_plugin_wzry_group_ops
 astrbot_version: ">=4.26,<5"
