@@ -442,6 +442,7 @@ DEFAULT_QUIZ_CONFIG: dict[str, Any] = {
 # 积分体系总配置（规则数值 + 邀请限制 + 兑换表 + 说明文案）
 DEFAULT_POINTS_CONFIG = {
     "rules": dict(POINT_RULES),
+    "sign_enabled": True,      # /签到 命令开关（关掉可与其他签到插件共存，避免重复回复）
     "invite_daily_limit": 3,   # 每人每天最多记录邀请次数；0 = 不限
     "quiz": dict(DEFAULT_QUIZ_CONFIG),  # 答题活动配置
     "auto_invite": True,       # 自动捕获入群事件并记录邀请人（无需成员手动 /邀请）
@@ -1143,6 +1144,40 @@ class WzryGroupOpsPlugin(Star):
         """为该群构造正确的 unified_msg_origin（用真实平台实例 ID）。"""
         return f"{self._platform_id()}:GroupMessage:{group_id}"
 
+    @staticmethod
+    def _platform_prefix(umo: str, fallback: str = "aiocqhttp") -> str:
+        """从 unified_msg_origin 提取平台前缀（aiocqhttp / qq_official ...）。
+
+        用于给管理员发私聊：和群消息走同一个平台，避免适配器不是
+        aiocqhttp 时私聊永远发不出去。
+        """
+        prefix = (umo or "").split(":", 1)[0].strip()
+        return prefix or fallback
+
+    async def _send_to(self, umo: str, chain: Any, label: str = "") -> bool:
+        """统一发送入口。
+
+        ``context.send_message`` 的返回值语义是「是否找到匹配平台」，
+        找不到平台时返回 False 并打 warning，不发异常——所以必须显式
+        检查返回值，否则「平台掉线 / 适配器没连上」会被误判为发送成功。
+        返回 True = 已交给平台；False = 平台不可达（消息未发出）。
+        """
+        try:
+            ok = await self.context.send_message(umo, chain)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                f"[{PLUGIN_NAME}] 发送失败{('[' + label + ']') if label else ''}: {e}"
+            )
+            return False
+        if ok is False:
+            logger.error(
+                f"[{PLUGIN_NAME}] 平台不可达，消息未发出"
+                f"{('[' + label + ']') if label else ''} umo={umo}"
+                "（通常是 QQ 适配器掉线/未连接，重连后自动恢复）"
+            )
+            return False
+        return True
+
     def _discovered_groups(self) -> dict[str, str]:
         """从历史消息/事件中发现的群（群号 -> 群名）。
 
@@ -1369,7 +1404,7 @@ class WzryGroupOpsPlugin(Star):
                             chain = chain.message("\n" + text)
                         else:
                             chain = chain.message(text)
-                        await self.context.send_message(info.get("umo", ""), chain)
+                        await self._send_to(info.get("umo", ""), chain, f"新人跟进 {gid}")
                         sent.append(stage["after"])
                         rec["sent_stages"] = sent
                         changed = True
@@ -1426,8 +1461,8 @@ class WzryGroupOpsPlugin(Star):
             if not text:
                 text = RESCUE_TOPICS[idx]
             try:
-                await self.context.send_message(
-                    info.get("umo", ""), MessageChain().message(text)
+                await self._send_to(
+                    info.get("umo", ""), MessageChain().message(text), f"冷场救场 {gid}"
                 )
                 act["rescue_idx"] = idx + 1
                 act["last_rescue_ts"] = now
@@ -1482,7 +1517,7 @@ class WzryGroupOpsPlugin(Star):
                         "群里最近搞了内部赛和皮肤抽奖，回来玩两把？\n"
                         "今晚20:00车队还差人，就等你上车了 🎮"
                     )
-                    await self.context.send_message(info.get("umo", ""), chain)
+                    await self._send_to(info.get("umo", ""), chain, f"沉睡唤醒 {gid}")
                     m["last_wake_ts"] = now
                     changed = True
                     logger.info(f"[{PLUGIN_NAME}] 自动唤醒沉睡成员 {gid}/{uid}")
@@ -1571,21 +1606,22 @@ class WzryGroupOpsPlugin(Star):
             admins = [x.strip() for x in re.split(r"[，,;；\s]+", raw_admins) if x.strip()]
             also_group = bool(auto.get("report_to_group", False))
             sent_any = False
-            try:
-                for admin in admins:
-                    await self.context.send_message(
-                        f"aiocqhttp:FriendMessage:{admin}", MessageChain().message(text)
-                    )
-                    sent_any = True
-                if also_group or not admins:
-                    await self.context.send_message(
-                        info.get("umo", ""), MessageChain().message(text)
-                    )
-                    sent_any = True
-                if sent_any:
-                    logger.info(f"[{PLUGIN_NAME}] 自动日报已发送：群 {gid}")
-            except Exception as e:  # noqa: BLE001
-                logger.warning(f"[{PLUGIN_NAME}] 日报发送失败: {e}")
+            # 私聊前缀从本群 umo 动态取（和群消息同一平台），适配 aiocqhttp/qq_official
+            pm_prefix = self._platform_prefix(info.get("umo", ""))
+            for admin in admins:
+                ok = await self._send_to(
+                    f"{pm_prefix}:FriendMessage:{admin}",
+                    MessageChain().message(text),
+                    f"日报私聊 {admin}",
+                )
+                sent_any = sent_any or ok
+            if also_group or not admins:
+                ok = await self._send_to(
+                    info.get("umo", ""), MessageChain().message(text), f"日报群发 {gid}"
+                )
+                sent_any = sent_any or ok
+            if sent_any:
+                logger.info(f"[{PLUGIN_NAME}] 自动日报已发送：群 {gid}")
 
     # ------------------------------------------------------------------
     # 任务 8：自动周榜
@@ -1617,8 +1653,10 @@ class WzryGroupOpsPlugin(Star):
                 lines.append(f"{icon} {r['name']} — {r['points']} 分（邀请 {r['invites']} 人）")
             lines.append("积分可兑换皮肤碎片/红包，继续加油！🎁")
             try:
-                await self.context.send_message(
-                    info.get("umo", ""), MessageChain().message("\n".join(lines))
+                await self._send_to(
+                    info.get("umo", ""),
+                    MessageChain().message("\n".join(lines)),
+                    f"自动周榜 {gid}",
                 )
                 logger.info(f"[{PLUGIN_NAME}] 自动周榜已发布：群 {gid}")
             except Exception as e:  # noqa: BLE001
@@ -1755,7 +1793,9 @@ class WzryGroupOpsPlugin(Star):
                 chain = MessageChain().at(nickname, new_uid).message("\n" + text)
             else:
                 chain = MessageChain().message(text)
-            await self.context.send_message(event.unified_msg_origin, chain)
+            await self._send_to(
+                event.unified_msg_origin, chain, f"入群欢迎 {group_id}"
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[{PLUGIN_NAME}] 欢迎语发送失败: {e}")
 
@@ -1865,8 +1905,10 @@ class WzryGroupOpsPlugin(Star):
         except (KeyError, IndexError, ValueError):
             text = DEFAULT_INVITE_BROADCAST.format(inviter=inviter, invitee=invitee, points=points)
         try:
-            await self.context.send_message(
-                self._umo_for_group(group_id), MessageChain().message(text)
+            await self._send_to(
+                self._umo_for_group(group_id),
+                MessageChain().message(text),
+                f"邀请播报 {group_id}",
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[{PLUGIN_NAME}] 邀请播报失败: {e}")
@@ -1892,9 +1934,10 @@ class WzryGroupOpsPlugin(Star):
                 return
             self._last_reply[ck] = now
             try:
-                await self.context.send_message(
+                await self._send_to(
                     event.unified_msg_origin,
                     MessageChain().message(rule.get("reply", "")),
+                    "关键词应答",
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] 关键词应答失败: {e}")
@@ -1928,8 +1971,8 @@ class WzryGroupOpsPlugin(Star):
         if not answer:
             return
         try:
-            await self.context.send_message(
-                event.unified_msg_origin, MessageChain().message(answer)
+            await self._send_to(
+                event.unified_msg_origin, MessageChain().message(answer), "AI 应答"
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[{PLUGIN_NAME}] AI 应答失败: {e}")
@@ -2097,8 +2140,8 @@ class WzryGroupOpsPlugin(Star):
                 f"（本场还剩 {max(0, limit - len(winners))} 个获奖名额）"
             )
         try:
-            await self.context.send_message(
-                self._umo_for_group(group_id), MessageChain().message(msg)
+            await self._send_to(
+                self._umo_for_group(group_id), MessageChain().message(msg), f"答题播报 {group_id}"
             )
         except Exception as e:  # noqa: BLE001
             logger.warning(f"[{PLUGIN_NAME}] 答题播报失败: {e}")
@@ -2164,8 +2207,8 @@ class WzryGroupOpsPlugin(Star):
             else:
                 msg = f"⏰ 答题超时结束，没人答对~ 正确答案是：{answer_txt}\n下一题马上来！"
             try:
-                await self.context.send_message(
-                    self._umo_for_group(gid), MessageChain().message(msg)
+                await self._send_to(
+                    self._umo_for_group(gid), MessageChain().message(msg), f"答题超时 {gid}"
                 )
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] 答题超时播报失败: {e}")
@@ -2460,10 +2503,11 @@ class WzryGroupOpsPlugin(Star):
                 if quiz_text:
                     text = text.rstrip() + "\n\n" + quiz_text
             try:
-                await self.context.send_message(
-                    info.get("umo", ""), MessageChain().message(text)
+                ok = await self._send_to(
+                    info.get("umo", ""), MessageChain().message(text), f"推送 {key}->{gid}"
                 )
-                sent += 1
+                if ok:
+                    sent += 1
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] 向群 {gid} 推送 {key} 失败: {e}")
         return sent
@@ -2637,6 +2681,9 @@ class WzryGroupOpsPlugin(Star):
         name = event.get_sender_name() or user_id
         if not group_id:
             yield event.plain_result("❌ 签到请在群内进行。")
+            return
+        # 签到总开关（关闭后本插件不再接管签到，避免与其他签到插件重复回复）
+        if not self._points_cfg().get("sign_enabled", True):
             return
         today = _bj_now().strftime("%Y-%m-%d")
         u = self.store.get_user(group_id, user_id, name)
@@ -3035,7 +3082,7 @@ class WzryGroupOpsPlugin(Star):
         cfg = self.store.data.get("config", {})
         return json_response({
             "plugin": PLUGIN_NAME,
-            "version": "1.2.0",
+            "version": "1.3.0",
             "bound_groups": len(self.store.bound_groups()),
             "auto_welcome": cfg.get("auto_welcome", True),
             "schedule_enabled": cfg.get("schedule_enabled", True),
@@ -3241,11 +3288,15 @@ class WzryGroupOpsPlugin(Star):
         for gid, info in targets.items():
             try:
                 text = self._render(key, gid) if not custom else text_tpl
-                # context.send_message 返回"是否找到匹配平台"，异常则说明真的发送失败
-                await self.context.send_message(
-                    info.get("umo", ""), MessageChain().message(text)
+                # _send_to：异常或平台不可达（返回 False）均计失败
+                ok = await self._send_to(
+                    info.get("umo", ""), MessageChain().message(text), f"WebUI 推送 {gid}"
                 )
-                sent += 1
+                if ok:
+                    sent += 1
+                else:
+                    failed += 1
+                    errors.append(f"{gid}: 平台不可达（QQ 适配器是否在线？）")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] WebUI 推送失败 group={gid}: {e}")
                 failed += 1
@@ -3317,6 +3368,9 @@ class WzryGroupOpsPlugin(Star):
                 cfg["invite_daily_limit"] = max(0, min(999, int(payload["invite_daily_limit"])))
             except (TypeError, ValueError):
                 pass
+        # 签到总开关
+        if "sign_enabled" in payload:
+            cfg["sign_enabled"] = bool(payload["sign_enabled"])
         # 邀请自动捕获相关
         for flag in ("auto_invite", "invite_broadcast", "count_on_approve"):
             if flag in payload:
@@ -3720,15 +3774,18 @@ class WzryGroupOpsPlugin(Star):
             raw_admins = str(auto.get("report_admin_qq", "") or "")
             admins = [x.strip() for x in re.split(r"[，,;；\s]+", raw_admins) if x.strip()]
             also_group = bool(auto.get("report_to_group", False))
+            # 私聊前缀从本群 umo 动态取（和群消息同一平台）
+            pm_prefix = self._platform_prefix(info.get("umo", ""))
             for admin in admins:
-                try:
-                    await self.context.send_message(
-                        f"aiocqhttp:FriendMessage:{admin}", MessageChain().message(text)
-                    )
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(f"[{PLUGIN_NAME}] 日报私聊 {admin} 失败: {e}")
+                await self._send_to(
+                    f"{pm_prefix}:FriendMessage:{admin}",
+                    MessageChain().message(text),
+                    f"日报私聊 {admin}",
+                )
             if also_group or not admins:
-                await self.context.send_message(info.get("umo", ""), MessageChain().message(text))
+                await self._send_to(
+                    info.get("umo", ""), MessageChain().message(text), f"日报群发 {gid}"
+                )
 
     async def _send_weekly_now(self) -> None:
         top_n = max(3, min(20, int(self._ai_cfg().get("weekly_top_n", 5))))
@@ -3741,7 +3798,11 @@ class WzryGroupOpsPlugin(Star):
             for i, r in enumerate(rows):
                 icon = medals[i] if i < 3 else f"{i + 1}."
                 lines.append(f"{icon} {r['name']} — {r['points']} 分（邀请 {r['invites']} 人）")
-            await self.context.send_message(info.get("umo", ""), MessageChain().message("\n".join(lines)))
+            await self._send_to(
+                info.get("umo", ""),
+                MessageChain().message("\n".join(lines)),
+                f"手动周榜 {gid}",
+            )
 
     async def api_activity(self):
         group_id = request.query.get("group_id", "")
@@ -3919,13 +3980,11 @@ class WzryGroupOpsPlugin(Star):
             return error_response("答题活动未开启或出题失败", status_code=400)
         # 推送到群（与定时答题广播同一路径）
         info = (self.store.enabled_groups() or {}).get(group_id) or {}
-        try:
-            await self.context.send_message(
-                info.get("umo", ""), MessageChain().message(text)
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[{PLUGIN_NAME}] WebUI 答题推送到群 {group_id} 失败: {e}")
-            return error_response(f"出题成功但推送失败：{e}", status_code=500)
+        ok = await self._send_to(
+            info.get("umo", ""), MessageChain().message(text), f"WebUI 出题 {group_id}"
+        )
+        if not ok:
+            return error_response("出题成功但推送失败（QQ 适配器不在线？）", status_code=500)
         return json_response({"started": True, "group_id": group_id, "content": text})
 
     async def api_quiz_status(self):

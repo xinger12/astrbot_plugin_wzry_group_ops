@@ -624,6 +624,8 @@ async function loadPointsConfig() {
     renderRedeemList();
     const limit = $("ptInviteLimit");
     if (limit) limit.value = state.pointsCfg.invite_daily_limit ?? 3;
+    const signSw = $("ptSignEnabled");
+    if (signSw) signSw.checked = state.pointsCfg.sign_enabled !== false;
     const note = $("ptRedeemNote");
     if (note) note.value = state.pointsCfg.redeem_note || "";
     renderPointRuleGrid();
@@ -675,7 +677,7 @@ function renderPointRuleGrid() {
   const r = state.pointsCfg.rules || {};
   const limit = state.pointsCfg.invite_daily_limit ?? 0;
   const rows = [
-    ["/签到", `每日签到 +${r.sign ?? 0}`],
+    ["/签到", `每日签到 +${r.sign ?? 0}${state.pointsCfg.sign_enabled === false ? "（已关闭）" : ""}`],
     ["/积分", "查询自己的积分"],
     ["/积分榜", "查看群内排行"],
     ["/邀请", `记录邀请 +${r.invite ?? 0}${limit > 0 ? `（每天最多 ${limit} 次）` : "（不限次数）"}`],
@@ -706,6 +708,7 @@ async function savePointsConfig() {
   });
   const payload = {
     rules,
+    sign_enabled: $("ptSignEnabled") ? !!$("ptSignEnabled").checked : true,
     invite_daily_limit: Number($("ptInviteLimit")?.value) || 0,
     redeem_items: state.redeemItems,
     redeem_note: $("ptRedeemNote")?.value || "",

@@ -34,10 +34,10 @@
 
       <!-- ============ 自动化引擎 ============ -->
       <section class="panel active" id="p-automation">
-        <!-- ===== v1.2.0 新增设置（置顶醒目） ===== -->
+        <!-- ===== v1.3.0 新增设置（置顶醒目） ===== -->
         <div class="card new-card">
-          <h2>🆕 v1.2.0 新增设置 <span class="new-badge">NEW</span></h2>
-          <p class="hint">本次更新新增：①<b>答题活动</b>（答对真实自动加分，防重复刷分，在「积分管理」页）②推送统计改为按异常判定（修好"显示失败其实已推送"）③AI 语气重写（不再强行拐打游戏，减少幻觉）。</p>
+          <h2>🆕 v1.3.0 新增设置 <span class="new-badge">NEW</span></h2>
+          <p class="hint">本次更新新增：①<b>签到开关</b>（另有签到插件时关掉本插件的签到，避免重复回复，在「积分管理」页）②<b>发送失败告警</b>（QQ 适配器掉线时明确报错，不再假装发送成功）③日报私聊改为跟随群平台，换适配器也能正常收到。</p>
           <div class="row" style="margin-top:12px">
             <div class="field" style="flex:2">
               <label>🧠 答题活动入口</label>
@@ -61,6 +61,12 @@
             </div>
             <div class="field" style="flex:2; align-self:end; padding-bottom:2px">
               <p class="hint" style="margin:0">💡 AI 定时推送实时生成开关在「<b>AI 话术</b>」标签页 →「AI 参与的场景」→ 勾选「定时推送实时生成」，开启后每次推送内容都不同。</p>
+            </div>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field" style="flex:2">
+              <label>📅 签到开关 <span class="new-badge sm">新</span></label>
+              <p class="hint" style="margin:0">另有签到插件时，到「<b>积分管理</b>」页 → 「⚙️ 积分规则配置」→ 取消勾选「启用 /签到 命令」，本插件就不再接管签到，避免群里两个签到插件重复回复。</p>
             </div>
           </div>
           <div class="row" style="margin-top:12px">
@@ -366,10 +372,15 @@
           <h2>⚙️ 积分规则配置 <span class="new-badge">NEW</span></h2>
           <p class="hint">在这里定义积分怎么算、邀请有什么限制、积分能兑换什么。改完点下方保存，群内 <code>/签到</code>、<code>/邀请</code>、<code>/兑换</code> 会立即按新规则执行。</p>
 
-          <h3 class="sub-h">① 各行为加分值</h3>
+          <h3 class="sub-h">① 功能开关</h3>
+          <div class="row">
+            <label class="sw"><input type="checkbox" id="ptSignEnabled" /><span>启用「/签到」命令（有其他签到插件时建议关闭，避免重复回复）</span></label>
+          </div>
+
+          <h3 class="sub-h">② 各行为加分值</h3>
           <div class="row" id="pointRules"></div>
 
-          <h3 class="sub-h">② 邀请防刷限制</h3>
+          <h3 class="sub-h">③ 邀请防刷限制</h3>
           <div class="row">
             <div class="field">
               <label>每人每天最多记录邀请次数（0 = 不限）</label>
@@ -380,7 +391,7 @@
             </div>
           </div>
 
-          <h3 class="sub-h">③ 积分兑换表（群内 <code>/兑换</code> 可查看）</h3>
+          <h3 class="sub-h">④ 积分兑换表（群内 <code>/兑换</code> 可查看）</h3>
           <div id="ptRedeemList" class="list"></div>
           <div class="row" style="margin-top:10px">
             <div class="field"><label>兑换项名称</label><input type="text" id="ptRName" placeholder="如：皮肤碎片" /></div>
@@ -564,7 +575,7 @@
         </div>
       </section>
 
-      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.2.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
+      <div class="footer">王者荣耀交友扩列群 · 运营作战台 v1.3.0 ｜ 数据保存在 AstrBot 插件数据目录</div>
     </div>
 
     <!-- 显式引入 bridge SDK：AstrBot 返回 HTML 时会把它改写为带鉴权令牌的地址。
