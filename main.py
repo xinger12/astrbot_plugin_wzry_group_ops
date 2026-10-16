@@ -74,8 +74,8 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "【午后小互动】\n"
             "猜英雄环节来啦——描述如下：\n"
             "「一个战士，能吸血，大招是范围伤害，经常一打五」\n"
-            "猜中的兄弟，群里 @ 我 领积分+10 🎁\n"
-            "（提示：昨晚有人在群里用他拿了五杀）"
+            "直接在群里回英雄名字就行，看看谁手速快 👇\n"
+            "（推送时会自动追加一道正式题目，答对有奖，具体分值以题目为准）"
         ),
     },
     "team_call": {
@@ -112,7 +112,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "来看看今天的群内MVP 👑\n"
             "MVP：{mvp}\n\n"
             "其他精彩战绩也发上来，群里评出「今日最秀」，\n"
-            "获奖的兄弟积分+20，攒够积分可以换皮肤碎片 🎁\n"
+            "每日活跃积分由系统自动结算，攒够可换皮肤碎片 🎁\n"
             "（明天同一时间继续，别潜水了！）"
         ),
     },
@@ -126,7 +126,6 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "· 20:00 车队照常\n"
             "· 新增「交友扩列专场」——想找CP/闺蜜/师傅的，明天别错过\n"
             "· 群内积分兑换表已更新，攒分换皮肤！\n\n"
-            "口令红包已发，先到先得~\n"
             "晚安，明天见 🌙"
         ),
     },
@@ -191,7 +190,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
             "群里安静得能听见打野刷野的声音了 😂\n"
             "来个投票：你们觉得当前版本最强打野是？\n"
             "A 铠  B 娜可露露  C 露娜  D 其他\n"
-            "扣字母，猜对的发积分~"
+            "扣字母，A/B/C/D 都可以，选完扣 1~"
         ),
     },
     "points_rule": {
@@ -247,7 +246,7 @@ TEMPLATES: dict[str, dict[str, str]] = {
 
 # 自动冷场救场时轮换使用的话题
 RESCUE_TOPICS = [
-    "群里安静得能听见打野刷野的声音了 😂\n来个投票：当前版本最强打野是？\nA 铠  B 娜可露露  C 露娜  D 其他\n扣字母，猜对的发积分~",
+    "群里安静得能听见打野刷野的声音了 😂\n来个投票：当前版本最强打野是？\nA 铠  B 娜可露露  C 露娜  D 其他\n扣个 1 选你心里的答案~",
     "有没有今晚想上分的？扣个 1，凑够5人开黑 🎮",
     "来聊个话题：你上分最怕遇到什么队友？\n（我先说：辅助不买眼的）",
     "猜英雄时间：一个法师，技能能位移，大招是范围控制，经常一打五。是谁？",
@@ -279,7 +278,7 @@ FOLLOWUP_STAGES = [
         "key": "icebreak_72h",
         "content": (
             "@{nickname} 送你一份新人福利~\n"
-            "只要在群里冒个泡并参与一次开黑，就能领积分+50，可换皮肤碎片 🎁\n"
+            "在群里冒个泡就能累计活跃积分，参与互动还有额外加分 🎁\n"
             "群里都是自己人，别害羞，一起上分！"
         ),
     },
@@ -349,10 +348,102 @@ DEFAULT_REDEEM_ITEMS = [
 # 邀请自动播报默认话术（{inviter} 邀请人 / {invitee} 新人 / {points} 获得积分）
 DEFAULT_INVITE_BROADCAST = "🎉 感谢 {inviter} 拉来了新同学 {invitee}，邀请积分 +{points}！"
 
+# ---------------------------------------------------------------------------
+# 答题活动题库（群内消息匹配判定，全自动发分）
+# ---------------------------------------------------------------------------
+# 每题结构：
+#   q       题干
+#   answers 可接受答案列表（大小写/空格/全角已做归一化，这里只填小写核心词）
+#   hint    提示（答错时可选公布）
+#   limit   本群每轮最多几人获奖（0 = 不限，默认 3 人，防刷）
+#   reward  覆盖分值（留空则用 rules.quiz）
+QUIZ_BANK: list[dict[str, Any]] = [
+    {
+        "id": "hero_1",
+        "q": "一个法师，技能能位移，大招是范围控制，经常一打五。是谁？",
+        "answers": ["诸葛亮", "孔明"],
+        "hint": "三个字，人称「军师」。",
+        "limit": 3,
+    },
+    {
+        "id": "hero_2",
+        "q": "一个战士，能吸血，大招是范围伤害，经常一打五。是谁？",
+        "answers": ["曹操", "曹老板"],
+        "hint": "魏国主公，开大吸血。",
+        "limit": 3,
+    },
+    {
+        "id": "hero_3",
+        "q": "一个刺客，位移多、能隐身，玩家都喊他「猴子」。是谁？",
+        "answers": ["孙悟空", "猴子", "猴哥"],
+        "hint": "两根毛的棒子。",
+        "limit": 3,
+    },
+    {
+        "id": "hero_4",
+        "q": "一个射手，一技能放地雷，大招全图支援。是谁？",
+        "answers": ["后羿", "鲁班七号", "鲁班", "黄忠"],
+        "hint": "答案不唯一，上面任一都算对。",
+        "limit": 3,
+    },
+    {
+        "id": "hero_5",
+        "q": "峡谷里被称为「团战发动机」，大招能把一群人拉到一起的辅助是谁？",
+        "answers": ["鬼谷子", "鲁班大师", "盾山", "孙膑"],
+        "hint": "开团型辅助。",
+        "limit": 3,
+    },
+    {
+        "id": "game_1",
+        "q": "王者荣耀里「红 BUFF」的别名叫什么？（两个字）",
+        "answers": ["红爸爸", "红爸", "赤甲"],
+        "hint": "打野都怕被反的那个。",
+        "limit": 3,
+    },
+    {
+        "id": "game_2",
+        "q": "王者荣耀一局正常排位最多能 ban 几个英雄？",
+        "answers": ["4", "四个", "4个"],
+        "hint": "双方各 2 个。",
+        "limit": 3,
+    },
+    {
+        "id": "game_3",
+        "q": "「五杀」英文在王者荣耀结算界面里叫什么？",
+        "answers": ["penta kill", "pentakill"],
+        "hint": "P 开头。",
+        "limit": 3,
+    },
+    {
+        "id": "group_1",
+        "q": "本群的晚间车队几点开黑？",
+        "answers": ["20:00", "20点", "八点", "20"],
+        "hint": "晚上八点。",
+        "limit": 5,
+    },
+    {
+        "id": "group_2",
+        "q": "在本群发什么命令可以查自己的积分？",
+        "answers": ["/积分", "积分"],
+        "hint": "斜杠开头。",
+        "limit": 5,
+    },
+]
+
+# 答题活动配置（默认值，可在 WebUI 配置）
+DEFAULT_QUIZ_CONFIG: dict[str, Any] = {
+    "quiz_enabled": True,        # 总开关
+    "quiz_reward": 10,           # 答对得分（覆盖则按题上的 reward）
+    "quiz_limit": 3,             # 每轮每群最多几人获奖（0=不限）
+    "quiz_timeout": 600,         # 每题有效期（秒），超时自动公布答案并开下一题
+    "quiz_ai_judge": True,       # 允许 AI 判定接近答案（仅在规则匹配失败时）
+}
+
 # 积分体系总配置（规则数值 + 邀请限制 + 兑换表 + 说明文案）
 DEFAULT_POINTS_CONFIG = {
     "rules": dict(POINT_RULES),
     "invite_daily_limit": 3,   # 每人每天最多记录邀请次数；0 = 不限
+    "quiz": dict(DEFAULT_QUIZ_CONFIG),  # 答题活动配置
     "auto_invite": True,       # 自动捕获入群事件并记录邀请人（无需成员手动 /邀请）
     "invite_broadcast": True,  # 邀请成功后在群内播报
     "invite_broadcast_text": DEFAULT_INVITE_BROADCAST,
@@ -429,7 +520,7 @@ DEFAULT_AI: dict[str, Any] = {
     "ai_enabled": False,          # AI 总开关（默认关闭，避免意外消耗额度）
     "ai_provider_id": "",         # 留空 = 使用 AstrBot 当前默认对话模型
     "ai_timeout": 20,             # 单次调用超时（秒）
-    "ai_temperature": 0.9,        # 生成温度，越高越有创意
+    "ai_temperature": 0.6,        # 生成温度；高温度更易产生幻觉，群聊场景建议 0.4~0.7
     # 各场景独立开关
     "ai_for_generate": True,      # WebUI 里 AI 生成 / 润色话术
     "ai_for_rescue": True,        # 冷场救场用 AI 生成话题
@@ -440,8 +531,9 @@ DEFAULT_AI: dict[str, Any] = {
     "weekly_top_n": 5,            # 周榜展示人数（防消息过长）
     # 人设与约束
     "ai_persona": (
-        "你是一个王者荣耀开黑交友 QQ 群的运营助手，说话像群里的老玩家，"
-        "口语化、有网感、适度用 emoji，绝不端着。"
+        "你是这个王者荣耀开黑交友 QQ 群里的群友，不是客服也不是机器人。"
+        "说话自然、口语化、像真人打字：可以用短句，可以接梗，可以说「不知道」「我也在看」。"
+        "群聊内容以王者荣耀和开黑为主，但别人聊别的也正常接话。"
     ),
     "ai_guard": (
         "硬性要求："
@@ -449,7 +541,10 @@ DEFAULT_AI: dict[str, Any] = {
         "② 长度控制在 40-150 字，适合手机一屏看完；"
         "③ 必须带一个明确的互动引导（提问 / 扣1 / 报名 / 投票）；"
         "④ 禁止出现任何虚假承诺、抽奖保证、充值返利、外部链接、二维码；"
-        "⑤ 禁止涉政、涉黄、辱骂、地域歧视。"
+        "⑤ 禁止承诺发积分、发礼物、发奖励（积分由系统自动结算，不由你分配）；"
+        "⑥ 禁止编造具体数据、战绩、段位、版本数值，不确定就说让大家说说看；"
+        "⑦ 禁止涉政、涉黄、辱骂、地域歧视；"
+        "⑧ 不要每条都拐去打游戏/开黑，顺着对方说的话题接。"
     ),
 }
 
@@ -461,7 +556,7 @@ AI_SCENES: dict[str, dict[str, str]] = {
     },
     "noon": {
         "label": "午后互动",
-        "brief": "写一条午后轻互动（猜英雄 / 投票 / 小问答），答对给积分，激发讨论。",
+        "brief": "写一条午后轻互动（猜英雄 / 投票 / 小问答），让大家愿意接话，不要承诺发奖品或积分。",
     },
     "team_call": {
         "label": "车队集结令",
@@ -574,6 +669,8 @@ class OpsStore:
             "followups": {},     # group_id -> {user_id: {name, joined_ts, sent_stages[]}}
             "invite_log": {},    # group_id -> [{inviter, inviter_name, invitee, invitee_name,
                                  #               ts, date, source, points, counted, claimed}]
+            "quiz_active": {},   # group_id -> {quiz_id, q, answers, reward, limit, winners[],
+                                 #                  started_ts, expires_ts}
             "fired": {},         # 发送去重标记（持久化，防重启后重复推送）
             "discovered_groups": {},  # group_id -> 群名（收到过消息的群，供 WebUI 自助绑定）
             "schedule": DEFAULT_SCHEDULE,
@@ -1113,6 +1210,9 @@ class WzryGroupOpsPlugin(Star):
                 if auto.get("auto_cold_rescue", True):
                     await self._job_cold_rescue()
 
+                # 4.5) 答题活动超时结算
+                await self._quiz_timeout_check()
+
                 # 5) 自动沉睡唤醒（每 1 小时）
                 if auto.get("auto_wake", True):
                     if now - self._task_mark.get("wake", 0) >= 3600:
@@ -1576,7 +1676,18 @@ class WzryGroupOpsPlugin(Star):
             if user_id in self.store.followup_of(group_id):
                 self.store.clear_followup(group_id, user_id)
 
-            # ---- C. 关键词自动应答 ----
+            # ---- C. 答题判定（优先于关键词应答，避免模板吃回复） ----
+            try:
+                if self._quiz_cfg().get("quiz_enabled", True):
+                    handled = await self.quiz_handle_answer(
+                        event, group_id, user_id, name, event.message_str or ""
+                    )
+                    if handled:
+                        return
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[{PLUGIN_NAME}] 答题判定异常: {e}")
+
+            # ---- D. 关键词自动应答 ----
             auto = self.store.data.get("automation", {})
             if auto.get("auto_reply", True) and self.store.group_feature(group_id, "reply"):
                 await self._maybe_auto_reply(event, group_id, event.message_str or "")
@@ -1790,23 +1901,29 @@ class WzryGroupOpsPlugin(Star):
             return
 
         # ---- 规则未命中：可选 AI 兜底 ----
-        # 仅当 AI 开启、场景开关打开、且消息看起来是在提问时才回，避免刷屏
+        # 保守触发：只在消息明确是提问且非闲聊时才用 AI 回，绝不抢普通聊天的话
         ai = self._ai_cfg()
         if not (ai.get("ai_enabled") and ai.get("ai_for_reply", True)):
             return
-        looks_like_question = any(
-            k in text for k in ("?", "？", "吗", "怎么", "如何", "能不能", "有没有", "什么", "哪")
-        )
-        if not looks_like_question or len(text) > 120:
+        text = (text or "").strip()
+        if not text or len(text) > 120:
             return
+        # 必须是真提问（问号 / 疑问词）才接话；聊天、晒图、口号一律不回
+        if not any(k in text for k in ("?", "？", "吗", "怎么", "如何", "能不能",
+                                       "有没有", "什么", "哪", "请问", "求问")):
+            return
+        # 命中规则词却不该回的场景（如"有队吗"由规则处理），这里仅兜底
         ck = f"{group_id}#__ai__"
         if now - self._last_reply.get(ck, 0) < cooldown:
             return
         self._last_reply[ck] = now
         answer = await self.ai_custom(
-            f"群成员在群里问：「{text}」\n"
-            f"请以群管理员的身份，用简短、友好、口语化的方式回答。"
-            f"如果这个问题跟王者荣耀、开黑、群规则、积分无关，就礼貌地引导他聊游戏相关话题。",
+            f"群成员问：「{text}」\n"
+            f"请像群里真实的老玩家一样，简短自然地回答他。"
+            f"规则：① 只答他问的这件事，不要生硬地把话题拐到游戏/开黑/报名上；"
+            f"② 如果确实和王者荣耀、群规则、积分有关，可以顺带提一句；"
+            f"③ 不确定的事（战绩、别人段位、具体版本数据）不要编，就说让大家说说看；"
+            f"④ 40 字以内，口语化。",
         )
         if not answer:
             return
@@ -1849,6 +1966,209 @@ class WzryGroupOpsPlugin(Star):
             return int(cfg.get("rules", {}).get(key, POINT_RULES.get(key, 0)))
         except (TypeError, ValueError):
             return int(POINT_RULES.get(key, 0))
+
+    # ==================================================================
+    # 答题活动引擎
+    # ==================================================================
+    def _quiz_cfg(self) -> dict[str, Any]:
+        """答题活动配置；与默认值深合并。"""
+        cfg = self._points_cfg()
+        q = cfg.get("quiz")
+        if not isinstance(q, dict):
+            q = {}
+        merged = json.loads(json.dumps(DEFAULT_QUIZ_CONFIG))
+        for k, v in q.items():
+            if k in merged:
+                merged[k] = v
+        cfg["quiz"] = merged
+        return merged
+
+    def quiz_active_of(self, group_id: str) -> dict[str, Any] | None:
+        """返回该群进行中的题目；已过期则自动结算并返回 None。"""
+        logs = self.store.data.setdefault("quiz_active", {})
+        act = logs.get(group_id)
+        if not isinstance(act, dict):
+            return None
+        expires = float(act.get("expires_ts") or 0)
+        if expires and time.time() > expires:
+            self.quiz_close(group_id, "timeout")
+            return None
+        return act
+
+    def quiz_close(self, group_id: str, reason: str = "done") -> None:
+        """结束该群当前题目（不发送消息，仅清理状态）。"""
+        (self.store.data.get("quiz_active") or {}).pop(group_id, None)
+
+    async def quiz_start(self, group_id: str, quiz_id: str | None = None) -> str:
+        """出一题并群内播报。返回播报文本（空串 = 未开启/无题/已有进行中的题）。"""
+        cfg = self._quiz_cfg()
+        if not cfg.get("quiz_enabled", True):
+            return ""
+        if group_id not in self.store.bound_groups():
+            return ""
+        if self.quiz_active_of(group_id):
+            return ""  # 已有进行中的题，等它结束
+
+        pool = QUIZ_BANK
+        pick = next((q for q in pool if q["id"] == quiz_id), None) if quiz_id else None
+        if pick is None:
+            done = set((self.store.data.get("quiz_active") or {}).get("_used", []) or [])
+            remaining = [q for q in pool if q["id"] not in done]
+            pick = random.choice(remaining or pool)
+
+        used = (self.store.data.get("quiz_active") or {}).setdefault("_used", [])
+        if not isinstance(used, list):
+            used = (self.store.data["quiz_active"])["_used"] = []
+        used.append(pick["id"])
+        if len(used) > 20:
+            used[:] = used[-20:]
+
+        limit = int(cfg.get("quiz_limit", 3))
+        timeout = int(cfg.get("quiz_timeout", 600))
+        reward = int(pick.get("reward") or cfg.get("quiz_reward", 10))
+        self.store.data["quiz_active"][group_id] = {
+            "quiz_id": pick["id"],
+            "q": pick["q"],
+            "answers": list(pick.get("answers") or []),
+            "hint": pick.get("hint", ""),
+            "reward": reward,
+            "limit": limit,
+            "winners": [],
+            "started_ts": time.time(),
+            "expires_ts": time.time() + max(60, timeout),
+        }
+        await self.store.asave()
+        limit_txt = f"（本场前 {limit} 名答对有效）" if limit > 0 else ""
+        return (
+            f"🧠 【答题挑战】\n{pick['q']}\n"
+            f"直接回答案即可{limit_txt}，答对自动 +{reward} 分 🎁"
+        )
+
+    async def quiz_handle_answer(self, event: AstrMessageEvent, group_id: str,
+                                 user_id: str, name: str, text: str) -> bool:
+        """判定一条群消息是否是当前题目的正确答案。命中则自动加分并播报。"""
+        if not text or len(text) > 40:
+            return False
+        act = self.quiz_active_of(group_id)
+        if not act:
+            return False
+        winners = act.setdefault("winners", [])
+        # 已获奖者不再重复计分（防重复发同一答案刷分）
+        if any(str(w.get("user_id")) == user_id for w in winners):
+            return False
+
+        limit = int(act.get("limit", 0))
+        if limit > 0 and len(winners) >= limit:
+            return False
+
+        cfg = self._quiz_cfg()
+        answers = [str(a) for a in (act.get("answers") or [])]
+        hit = self._quiz_match(text, answers)
+
+        # 规则未命中：可选 AI 判题（严格模式，只回答"是/否"）
+        if not hit and cfg.get("quiz_ai_judge", True) and self.ai_ready():
+            hit = await self._quiz_ai_judge(act.get("q", ""), answers, text)
+
+        if not hit:
+            return False
+
+        reward = int(act.get("reward") or 0)
+        self.store.add_points(group_id, user_id, reward, name)
+        winners.append({
+            "user_id": user_id,
+            "name": name,
+            "points": reward,
+            "ts": time.time(),
+            "time": _bj_now().strftime("%H:%M:%S"),
+        })
+        await self.store.asave()
+
+        # 名额用满 → 公布答案并结束本题
+        if limit > 0 and len(winners) >= limit:
+            answer_txt = " / ".join(answers[:3])
+            msg = (
+                f"🎊 答题结束！正确答案：{answer_txt}\n"
+                f"获奖名单：{'、'.join(w['name'] for w in winners)}，各 +{reward} 分 🎁"
+            )
+            self.quiz_close(group_id)
+        else:
+            msg = (
+                f"✅ 答对了！{name} +{reward} 分，当前 {self.store.get_user(group_id, user_id)['points']} 分。\n"
+                f"（本场还剩 {max(0, limit - len(winners))} 个获奖名额）"
+            )
+        try:
+            await self.context.send_message(
+                self._umo_for_group(group_id), MessageChain().message(msg)
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[{PLUGIN_NAME}] 答题播报失败: {e}")
+        return True
+
+    @staticmethod
+    def _quiz_match(text: str, answers: list[str]) -> bool:
+        """答案归一化后匹配：忽略大小写、空格、全角括号等差异。"""
+        def norm(s: str) -> str:
+            s = str(s).lower().strip()
+            s = re.sub(r"[\s　]+", "", s)
+            s = re.sub(r"[，,。.！!？?、~～\-—_*\"'「」『』（）()【】\[\]]", "", s)
+            return s
+        t = norm(text)
+        if not t:
+            return False
+        for a in answers:
+            a_norm = norm(a)
+            if not a_norm:
+                continue
+            if t == a_norm or a_norm in t:
+                return True
+        return False
+
+    async def _quiz_ai_judge(self, question: str, answers: list[str], reply: str) -> bool:
+        """让 AI 严格判定玩家回答是否等于标准答案。只回 Y/N。"""
+        prompt = (
+            f"你在做一道王者荣耀群答题活动的判题。\n"
+            f"【题目】{question}\n"
+            f"【标准答案】{'、'.join(answers)}\n"
+            f"【玩家回答】{reply}\n\n"
+            f"请判断玩家回答是否与标准答案等价（包含同义表述、错别字、昵称等）。"
+            f"只回答一个字：是 或 否。不要任何解释。"
+        )
+        try:
+            verdict = await self._ai_chat(
+                prompt, "你是严格的中文判题员，只输出「是」或「否」一个字。"
+            )
+        except Exception:  # noqa: BLE001
+            return False
+        if not verdict:
+            return False
+        return verdict.strip().startswith(("是", "Y", "y", "对", "正确"))
+
+    async def _quiz_timeout_check(self) -> None:
+        """定时检查各群进行中的题目是否超时，超时公布答案。"""
+        active = self.store.data.get("quiz_active") or {}
+        for gid in list(active.keys()):
+            if gid == "_used":
+                continue
+            act = active.get(gid)
+            if not isinstance(act, dict):
+                continue
+            if time.time() <= float(act.get("expires_ts") or 0):
+                continue
+            answers = [str(a) for a in (act.get("answers") or [])]
+            winners = act.get("winners") or []
+            self.quiz_close(gid)
+            await self.store.asave()
+            answer_txt = " / ".join(answers[:3]) or "（无）"
+            if winners:
+                msg = f"⏰ 答题超时结束。正确答案：{answer_txt}\n已获奖：{'、'.join(w['name'] for w in winners)} 🎁"
+            else:
+                msg = f"⏰ 答题超时结束，没人答对~ 正确答案是：{answer_txt}\n下一题马上来！"
+            try:
+                await self.context.send_message(
+                    self._umo_for_group(gid), MessageChain().message(msg)
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[{PLUGIN_NAME}] 答题超时播报失败: {e}")
 
     def ai_ready(self) -> bool:
         """AI 是否可用（总开关开启）。"""
@@ -1946,7 +2266,7 @@ class WzryGroupOpsPlugin(Star):
                     chat_provider_id=provider_id,
                     prompt=prompt,
                     system_prompt=system or None,
-                    temperature=float(ai.get("ai_temperature", 0.9)),
+                    temperature=float(ai.get("ai_temperature", 0.6)),
                 ),
                 timeout=timeout,
             )
@@ -2134,12 +2454,16 @@ class WzryGroupOpsPlugin(Star):
                 text = self._render(key, gid)
             if not text:
                 continue
+            # noon 模板 → 真正开一道题（模板文本仅作引导，实际判定走题库）
+            if key == "noon":
+                quiz_text = await self.quiz_start(gid)
+                if quiz_text:
+                    text = text.rstrip() + "\n\n" + quiz_text
             try:
-                ok = await self.context.send_message(
+                await self.context.send_message(
                     info.get("umo", ""), MessageChain().message(text)
                 )
-                if ok:
-                    sent += 1
+                sent += 1
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] 向群 {gid} 推送 {key} 失败: {e}")
         return sent
@@ -2414,6 +2738,47 @@ class WzryGroupOpsPlugin(Star):
         lines.append(f"本群累计记录 {total} 次邀请 · 邀请分值 {self._rule('invite')} 分/人")
         yield event.plain_result("\n".join(lines))
 
+    @filter.command("答题")
+    async def cmd_quiz(self, event: AstrMessageEvent):
+        """出题/查看当前题目：/答题（直接出下一题），/答题 看"""
+        group_id = str(event.get_group_id() or "")
+        if not group_id:
+            yield event.plain_result("❌ 请在群内使用。")
+            return
+        cfg = self._quiz_cfg()
+        if not cfg.get("quiz_enabled", True):
+            yield event.plain_result("ℹ️ 答题活动当前已关闭。")
+            return
+        arg = (event.message_str or "").replace("/答题", "").strip()
+
+        if arg in ("看", "当前", "status"):
+            act = self.quiz_active_of(group_id)
+            if not act:
+                yield event.plain_result("🕳️ 当前没有进行中的题目。发「/答题」开一题。")
+                return
+            winners = act.get("winners") or []
+            left = ""
+            limit = int(act.get("limit", 0))
+            if limit > 0:
+                left = f"\n剩余名额：{max(0, limit - len(winners))} 个"
+            yield event.plain_result(
+                f"🧠 当前题目：\n{act.get('q', '')}\n"
+                f"奖励：答对 +{act.get('reward', 0)} 分{left}"
+            )
+            return
+
+        text = await self.quiz_start(group_id)
+        if not text:
+            if self.quiz_active_of(group_id):
+                act = self.quiz_active_of(group_id)
+                yield event.plain_result(
+                    f"⏳ 上一题还没结束：\n{act.get('q', '')}\n直接回答案就行~"
+                )
+            else:
+                yield event.plain_result("ℹ️ 暂时无法出题（活动未开启或本群未绑定）。")
+            return
+        yield event.plain_result(text)
+
     @filter.command("兑换")
     async def cmd_redeem(self, event: AstrMessageEvent):
         """查看积分兑换表：/兑换"""
@@ -2657,6 +3022,10 @@ class WzryGroupOpsPlugin(Star):
             api(f"/{PLUGIN_NAME}/ai/apply", self.api_ai_apply, ["POST"], "采纳 AI 话术")
             api(f"/{PLUGIN_NAME}/ai/restore", self.api_ai_restore, ["POST"], "还原模板为内置版")
             api(f"/{PLUGIN_NAME}/ai/providers", self.api_ai_providers, ["GET"], "可用模型列表")
+            api(f"/{PLUGIN_NAME}/quiz/config", self.api_quiz_config_get, ["GET"], "获取答题活动配置")
+            api(f"/{PLUGIN_NAME}/quiz/config/save", self.api_quiz_config_save, ["POST"], "保存答题活动配置")
+            api(f"/{PLUGIN_NAME}/quiz/start", self.api_quiz_start, ["POST"], "手动出一题")
+            api(f"/{PLUGIN_NAME}/quiz/status", self.api_quiz_status, ["GET"], "查看各群进行中的题目")
             logger.info(f"[{PLUGIN_NAME}] WebUI API 路由注册完成")
         except Exception as e:  # noqa: BLE001
             logger.error(f"[{PLUGIN_NAME}] 注册 WebUI API 失败: {e}")
@@ -2666,7 +3035,7 @@ class WzryGroupOpsPlugin(Star):
         cfg = self.store.data.get("config", {})
         return json_response({
             "plugin": PLUGIN_NAME,
-            "version": "1.1.0",
+            "version": "1.2.0",
             "bound_groups": len(self.store.bound_groups()),
             "auto_welcome": cfg.get("auto_welcome", True),
             "schedule_enabled": cfg.get("schedule_enabled", True),
@@ -2868,19 +3237,23 @@ class WzryGroupOpsPlugin(Star):
         else:
             targets = groups
         text_tpl = custom if custom else TEMPLATES[key]["content"]
-        sent, failed = 0, 0
+        sent, failed, errors = 0, 0, []
         for gid, info in targets.items():
             try:
                 text = self._render(key, gid) if not custom else text_tpl
-                ok = await self.context.send_message(
+                # context.send_message 返回"是否找到匹配平台"，异常则说明真的发送失败
+                await self.context.send_message(
                     info.get("umo", ""), MessageChain().message(text)
                 )
-                sent += 1 if ok else 0
-                failed += 0 if ok else 1
+                sent += 1
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[{PLUGIN_NAME}] WebUI 推送失败 group={gid}: {e}")
                 failed += 1
-        return json_response({"sent": sent, "failed": failed, "total": len(targets)})
+                errors.append(f"{gid}: {e}")
+        return json_response({
+            "sent": sent, "failed": failed, "total": len(targets),
+            "errors": errors[:3],
+        })
 
     async def api_points(self):
         group_id = request.query.get("group_id", "")
@@ -3459,6 +3832,120 @@ class WzryGroupOpsPlugin(Star):
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"[{PLUGIN_NAME}] 兜底获取模型失败: {e}")
         return json_response({"providers": rows})
+
+    # ------------------------------------------------------------------
+    # 答题活动 API（v1.2.0 新增：答对自动加分，每轮每群限人数，杜绝重复刷分）
+    # ------------------------------------------------------------------
+    async def api_quiz_config_get(self):
+        """答题活动配置 + 各群进行中的题目（WebUI 卡片用）。"""
+        cfg = self._quiz_cfg()
+        return json_response({
+            "config": {
+                "quiz_enabled": bool(cfg.get("quiz_enabled", True)),
+                "quiz_reward": int(cfg.get("quiz_reward", 10)),
+                "quiz_limit": int(cfg.get("quiz_limit", 3)),
+                "quiz_timeout": int(cfg.get("quiz_timeout", 600)),
+                "quiz_ai_judge": bool(cfg.get("quiz_ai_judge", True)),
+            },
+            "bank_size": len(QUIZ_BANK),
+            "running": {
+                gid: {
+                    "q": act.get("q", ""),
+                    "reward": act.get("reward", 0),
+                    "winners": len(act.get("winners") or []),
+                    "limit": int(act.get("limit", 0)),
+                }
+                for gid, act in (self.store.data.get("quiz_active") or {}).items()
+                if isinstance(act, dict) and gid != "_used" and act.get("q")
+            },
+        })
+
+    async def api_quiz_config_save(self):
+        """保存答题活动配置（写回积分配置的 quiz 段，深合并补默认）。"""
+        payload = await request.json(default={})
+        cfg = self._points_cfg()
+        quiz = cfg.setdefault("quiz", dict(DEFAULT_QUIZ_CONFIG))
+        for flag in ("quiz_enabled", "quiz_ai_judge"):
+            if flag in payload:
+                quiz[flag] = bool(payload[flag])
+        for num_key, lo, hi in (
+            ("quiz_reward", 0, 999),
+            ("quiz_limit", 0, 99),
+            ("quiz_timeout", 60, 3600),
+        ):
+            if num_key in payload:
+                try:
+                    quiz[num_key] = max(lo, min(hi, int(payload[num_key])))
+                except (TypeError, ValueError):
+                    pass
+        await self.store.asave()
+        merged = self._quiz_cfg()
+        return json_response({
+            "saved": True,
+            "config": {
+                "quiz_enabled": bool(merged.get("quiz_enabled", True)),
+                "quiz_reward": int(merged.get("quiz_reward", 10)),
+                "quiz_limit": int(merged.get("quiz_limit", 3)),
+                "quiz_timeout": int(merged.get("quiz_timeout", 600)),
+                "quiz_ai_judge": bool(merged.get("quiz_ai_judge", True)),
+            },
+        })
+
+    async def api_quiz_start(self):
+        """手动向指定群推一道题（与群内 /答题 同一引擎）。"""
+        payload = await request.json(default={})
+        group_id = str(payload.get("group_id", "") or "")
+        if not group_id:
+            groups = self.store.enabled_groups()
+            if not groups:
+                return error_response("没有可用的群（未绑定或已全部停用）", status_code=400)
+            group_id = next(iter(groups))
+        if group_id not in self.store.bound_groups():
+            return error_response(f"群 {group_id} 未绑定", status_code=400)
+        text = await self.quiz_start(group_id)
+        if not text:
+            if self.quiz_active_of(group_id):
+                act = self.quiz_active_of(group_id)
+                return json_response({
+                    "started": False,
+                    "reason": "running",
+                    "running": {
+                        "q": act.get("q", ""),
+                        "reward": act.get("reward", 0),
+                        "winners": len(act.get("winners") or []),
+                        "limit": int(act.get("limit", 0)),
+                    },
+                })
+            return error_response("答题活动未开启或出题失败", status_code=400)
+        # 推送到群（与定时答题广播同一路径）
+        info = (self.store.enabled_groups() or {}).get(group_id) or {}
+        try:
+            await self.context.send_message(
+                info.get("umo", ""), MessageChain().message(text)
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[{PLUGIN_NAME}] WebUI 答题推送到群 {group_id} 失败: {e}")
+            return error_response(f"出题成功但推送失败：{e}", status_code=500)
+        return json_response({"started": True, "group_id": group_id, "content": text})
+
+    async def api_quiz_status(self):
+        """答题进行中的题目 + 已获奖名单。"""
+        rows = []
+        for gid, act in (self.store.data.get("quiz_active") or {}).items():
+            if not isinstance(act, dict) or gid == "_used" or not act.get("q"):
+                continue
+            rows.append({
+                "group_id": gid,
+                "q": act.get("q", ""),
+                "hint": act.get("hint", ""),
+                "reward": act.get("reward", 0),
+                "limit": int(act.get("limit", 0)),
+                "winners": [
+                    {"name": w.get("name", ""), "points": w.get("points", 0)}
+                    for w in (act.get("winners") or [])
+                ],
+            })
+        return json_response({"running": rows, "bank_size": len(QUIZ_BANK)})
 
     async def api_ai_save(self):
         payload = await request.json(default={})
